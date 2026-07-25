@@ -1,0 +1,12 @@
+{
+  "name": "xStocks — Consulta y Liquidez",
+  "short_name": "xStocks",
+  "start_url": "./xstocks_liquidez.html",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    { "src": "icon-xstocks-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon-xstocks.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

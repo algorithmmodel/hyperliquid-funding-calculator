@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>xStocks — Consulta y Liquidez</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-xstocks-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-xstocks.png">
+<link rel="manifest" href="manifest-xstocks.json">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="xStocks">
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --green: #3fb950;
+    --red: #f85149;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #14b8a6;
+    --accent-dark: #062019;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 24px;
+    padding-top: max(24px, env(safe-area-inset-top));
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 4px 0; }
+  .panel .desc { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .row { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .field { flex: 1; min-width: 140px; }
+  input {
+    width: 100%;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-dark);
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  .status { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+  .error { color: var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 12px; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; position: sticky; top: 0; background: var(--panel); }
+  .scroll { max-height: 400px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 20;
+    display: none;
+  }
+  .suggestions.open { display: block; }
+  .suggestion-item {
+    padding: 9px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+  }
+  .suggestion-item:hover { background: #1f2733; }
+  .suggestion-tag { font-size: 11px; color: var(--muted); }
+  .result-card {
+    margin-top: 12px;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    display: none;
+  }
+  .result-title { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+  .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+  .kv { }
+  .kv .k { font-size: 13px; color: var(--muted); }
+  .kv .v { font-size: 20px; font-weight: 700; }
+  .addr { font-size: 12px; color: var(--muted); word-break: break-all; margin-top: 12px; }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+  }
+  .badge-ok { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-warn { background: rgba(248,81,73,0.15); color: var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>xStocks — Consulta y Liquidez</h1>
+  <div class="subtitle">Buscador individual (Jupiter) + listado de xStocks operables con más de $500K de volumen 24hs (CoinGecko)</div>
+
+  <div class="panel">
+    <h2>1. Consultar un ticker específico</h2>
+    <div class="desc">Escriba el nombre real (ej. "QQQ", "AAPL") y le sugiere el xStock asociado</div>
+    <div class="field" style="position: relative;">
+      <label>Nombre o ticker</label>
+      <input id="tickerSearch" type="text" placeholder="Ej: QQQ, AAPL, TSLA..." autocomplete="off">
+      <div id="suggestions" class="suggestions"></div>
+    </div>
+    <button id="btnConsultar" style="margin-top:10px;">Consultar</button>
+    <div class="status" id="searchStatus"></div>
+
+    <div class="result-card" id="resultCard">
+      <div class="result-title" id="resTitle"></div>
+      <div class="kv-grid">
+        <div class="kv"><div class="k">Precio actual</div><div class="v" id="resPrice">—</div></div>
+        <div class="kv"><div class="k">Cambio 24h</div><div class="v" id="resChange">—</div></div>
+        <div class="kv"><div class="k">Liquidez del pool</div><div class="v" id="resLiquidity">—</div></div>
+        <div class="kv"><div class="k">Estado</div><div class="v" id="resStatus">—</div></div>
+      </div>
+      <div class="addr" id="resAddr"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>2. xStocks — listado por liquidez real (Jupiter)</h2>
+    <div class="desc">Lista de tickers vía categoría de CoinGecko + liquidez real del pool de Solana consultada en Jupiter (el mismo dato que usa la Card 1)</div>
+    <div class="row" style="align-items:flex-end; margin-bottom:10px;">
+      <div class="field" style="max-width:220px;">
+        <label>Piso de liquidez (en USD, ej. 500000)</label>
+        <input type="number" id="pisoVolumen" value="500000" step="1000">
+      </div>
+    </div>
+    <button id="btnListado">Actualizar listado</button>
+    <div class="status" id="listStatus"></div>
+    <div class="scroll">
+      <table id="listTable" style="display:none;">
+        <thead>
+          <tr><th>Ticker</th><th>Precio</th><th>Liquidez (Jupiter)</th><th>Market Cap</th></tr>
+        </thead>
+        <tbody id="listTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note">
+    Nota: si el navegador bloquea alguna de las dos consultas por política CORS, esa sección específica no podrá traer los datos (la otra puede seguir funcionando de forma independiente).
+  </div>
+</div>
+
+<script>
+// ===================== CARD 1: Búsqueda individual vía Jupiter =====================
+const tickerSearch = document.getElementById('tickerSearch');
+const suggestionsEl = document.getElementById('suggestions');
+const btnConsultar = document.getElementById('btnConsultar');
+const searchStatus = document.getElementById('searchStatus');
+const resultCard = document.getElementById('resultCard');
+const resTitle = document.getElementById('resTitle');
+const resPrice = document.getElementById('resPrice');
+const resChange = document.getElementById('resChange');
+const resLiquidity = document.getElementById('resLiquidity');
+const resStatus = document.getElementById('resStatus');
+const resAddr = document.getElementById('resAddr');
+
+let searchTimeout = null;
+let selectedToken = null; // { symbol, name, address }
+
+async function searchTokens(query) {
+  searchStatus.textContent = 'Buscando en Jupiter...';
+  try {
+    const resp = await fetch(`https://lite-api.jup.ag/tokens/v2/search?query=${encodeURIComponent(query)}`);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const results = await resp.json();
+    if (!Array.isArray(results) || results.length === 0) {
+      suggestionsEl.innerHTML = '<div class="suggestion-item" style="color:var(--muted); cursor:default;">Sin coincidencias</div>';
+      suggestionsEl.classList.add('open');
+      searchStatus.textContent = '';
+      return;
+    }
+    suggestionsEl.innerHTML = results.slice(0, 20).map(t => {
+      const symbol = t.symbol || '?';
+      const name = t.name || '';
+      const addr = t.id || t.address || '';
+      return `<div class="suggestion-item" data-addr="${addr}" data-symbol="${symbol}" data-name="${name}">
+        <span>${symbol} <span style="color:var(--muted);">— ${name}</span></span>
+        <span class="suggestion-tag">${addr.slice(0,4)}...${addr.slice(-4)}</span>
+      </div>`;
+    }).join('');
+    suggestionsEl.classList.add('open');
+    searchStatus.textContent = `${results.length} resultado(s). Elija uno.`;
+  } catch (err) {
+    searchStatus.innerHTML = `<span class="error">Error al buscar: ${err.message}. Posible bloqueo CORS.</span>`;
+  }
+}
+
+tickerSearch.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  selectedToken = null;
+  resultCard.style.display = 'none';
+  const q = tickerSearch.value.trim();
+  if (!q) { suggestionsEl.classList.remove('open'); suggestionsEl.innerHTML = ''; searchStatus.textContent = ''; return; }
+  searchTimeout = setTimeout(() => searchTokens(q), 350);
+});
+
+document.addEventListener('click', (e) => {
+  const item = e.target.closest('#suggestions .suggestion-item');
+  if (item && item.dataset.addr) {
+    selectedToken = { symbol: item.dataset.symbol, name: item.dataset.name, address: item.dataset.addr };
+    tickerSearch.value = item.dataset.symbol;
+    suggestionsEl.classList.remove('open');
+    searchStatus.textContent = `Seleccionado: ${item.dataset.symbol}. Toque "Consultar".`;
+  } else if (!e.target.closest('#tickerSearch') && !e.target.closest('#suggestions')) {
+    suggestionsEl.classList.remove('open');
+  }
+});
+
+btnConsultar.addEventListener('click', async () => {
+  if (!selectedToken) {
+    searchStatus.innerHTML = '<span class="error">Primero elija un token de la lista de sugerencias.</span>';
+    return;
+  }
+  btnConsultar.disabled = true;
+  searchStatus.textContent = 'Consultando precio y liquidez...';
+  resultCard.style.display = 'none';
+
+  try {
+    const resp = await fetch(`https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(selectedToken.address)}`);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    const info = json && json[selectedToken.address];
+    if (!info || typeof info.usdPrice !== 'number') {
+      searchStatus.innerHTML = '<span class="error">No se encontró precio para este token.</span>';
+      btnConsultar.disabled = false;
+      return;
+    }
+    resTitle.textContent = `${selectedToken.symbol} — ${selectedToken.name}`;
+    resPrice.textContent = '$' + info.usdPrice.toLocaleString('en-US', { maximumFractionDigits: 4 });
+    resChange.textContent = typeof info.priceChange24h === 'number'
+      ? `${info.priceChange24h >= 0 ? '+' : ''}${info.priceChange24h.toFixed(2)}%`
+      : '—';
+    const liq = typeof info.liquidity === 'number' ? info.liquidity : null;
+    resLiquidity.textContent = liq !== null ? '$' + liq.toLocaleString('en-US', { maximumFractionDigits: 0 }) : 'No disponible';
+
+    if (liq !== null) {
+      if (liq >= 500000) {
+        resStatus.innerHTML = 'Operable <span class="badge badge-ok">✓ liquidez OK</span>';
+      } else {
+        resStatus.innerHTML = 'Riesgo de slippage <span class="badge badge-warn">⚠ baja liquidez</span>';
+      }
+    } else {
+      resStatus.textContent = 'Sin dato de liquidez';
+    }
+
+    resAddr.textContent = selectedToken.address;
+    resultCard.style.display = 'block';
+    searchStatus.textContent = 'Listo.';
+  } catch (err) {
+    searchStatus.innerHTML = `<span class="error">Error: ${err.message}. Posible bloqueo CORS.</span>`;
+  }
+  btnConsultar.disabled = false;
+});
+
+// ===================== CARD 2: Listado filtrado por liquidez real (CoinGecko + Jupiter) =====================
+const btnListado = document.getElementById('btnListado');
+const listStatus = document.getElementById('listStatus');
+const listTable = document.getElementById('listTable');
+const listTbody = document.getElementById('listTbody');
+const pisoVolumenInput = document.getElementById('pisoVolumen');
+
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+btnListado.addEventListener('click', async () => {
+  btnListado.disabled = true;
+  listTable.style.display = 'none';
+  listTbody.innerHTML = '';
+
+  try {
+    // Paso 1: lista de xStocks (símbolo, nombre, id, market cap) desde la categoría de CoinGecko
+    listStatus.textContent = 'Paso 1/3: trayendo lista de xStocks desde CoinGecko...';
+    const catResp = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=xstocks-ecosystem&order=market_cap_desc&per_page=250&page=1&sparkline=false');
+    if (!catResp.ok) throw new Error('HTTP ' + catResp.status + ' al traer la categoría');
+    const catData = await catResp.json();
+    if (!Array.isArray(catData)) throw new Error('Respuesta inesperada de CoinGecko (categoría)');
+
+    // Paso 2: direcciones en Solana para cada id (una sola llamada masiva a la lista completa con plataformas)
+    listStatus.textContent = `Paso 2/3: resolviendo direcciones en Solana para ${catData.length} tokens...`;
+    const platResp = await fetch('https://api.coingecko.com/api/v3/coins/list?include_platform=true');
+    if (!platResp.ok) throw new Error('HTTP ' + platResp.status + ' al traer plataformas');
+    const platData = await platResp.json();
+    const platMap = {};
+    if (Array.isArray(platData)) {
+      platData.forEach(p => { platMap[p.id] = p.platforms || {}; });
+    }
+
+    const conDireccion = catData
+      .map(c => ({
+        symbol: c.symbol, name: c.name, id: c.id,
+        price: c.current_price, mcap: c.market_cap,
+        solanaAddr: (platMap[c.id] && platMap[c.id].solana) ? platMap[c.id].solana : null
+      }))
+      .filter(c => c.solanaAddr);
+
+    if (conDireccion.length === 0) {
+      listStatus.innerHTML = '<span class="error">Ningún token de la categoría tiene dirección de Solana resuelta.</span>';
+      btnListado.disabled = false;
+      return;
+    }
+
+    // Paso 3: liquidez real vía Jupiter Price API v3, en lotes
+    listStatus.textContent = `Paso 3/3: consultando liquidez real en Jupiter para ${conDireccion.length} tokens...`;
+    const lotes = chunkArray(conDireccion, 30);
+    const liquidezMap = {};
+    for (const lote of lotes) {
+      const ids = lote.map(t => t.solanaAddr).join(',');
+      try {
+        const priceResp = await fetch(`https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(ids)}`);
+        if (priceResp.ok) {
+          const priceJson = await priceResp.json();
+          Object.keys(priceJson).forEach(addr => {
+            liquidezMap[addr] = priceJson[addr];
+          });
+        }
+      } catch (e) { /* si un lote falla, seguimos con los demás */ }
+    }
+
+    const conLiquidez = conDireccion
+      .map(t => {
+        const info = liquidezMap[t.solanaAddr];
+        return {
+          ...t,
+          jupPrice: info ? info.usdPrice : null,
+          liquidity: info && typeof info.liquidity === 'number' ? info.liquidity : null
+        };
+      })
+      .filter(t => t.liquidity !== null);
+
+    const piso = parseFloat(pisoVolumenInput.value);
+    const pisoFinal = isNaN(piso) ? 500000 : piso;
+    const filtrados = conLiquidez.filter(t => t.liquidity > pisoFinal);
+    filtrados.sort((a, b) => b.liquidity - a.liquidity);
+
+    if (filtrados.length === 0) {
+      listStatus.textContent = `Ningún xStock con dirección en Solana supera $${pisoFinal.toLocaleString('en-US')} de liquidez real (de ${conLiquidez.length} con datos de Jupiter, ${conDireccion.length} con dirección Solana, ${catData.length} totales en la categoría).`;
+      btnListado.disabled = false;
+      return;
+    }
+
+    listTbody.innerHTML = filtrados.map(t => `
+      <tr>
+        <td>${(t.symbol || '').toUpperCase()}</td>
+        <td>$${(t.jupPrice ?? t.price ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
+        <td>$${(t.liquidity/1e3).toFixed(1)}K</td>
+        <td>$${((t.mcap || 0)/1e6).toFixed(1)}M</td>
+      </tr>
+    `).join('');
+    listTable.style.display = 'table';
+    listStatus.textContent = `${filtrados.length} xStock(s) con liquidez real > $${pisoFinal.toLocaleString('en-US')} (de ${catData.length} totales en la categoría).`;
+  } catch (err) {
+    listStatus.innerHTML = `<span class="error">Error: ${err.message}. Posible bloqueo CORS o rate limit.</span>`;
+  }
+  btnListado.disabled = false;
+});
+</script>
+</body>
+</html>
