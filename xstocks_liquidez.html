@@ -477,7 +477,8 @@ const bestSavingsEl = document.getElementById('bestSavings');
 
 const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const USDC_SOL = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const RANGO_TEST_API_KEY = 'c6381a79-2817-4602-83bf-6a641a409e32'; // key publica de test de Rango (rate limit bajo, no es secreta)
+const SYMBIOSIS_USDT_TRON = '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'; // direccion sintetica interna de Symbiosis para USDT-Tron
+const SYMBIOSIS_USDC_SOL = '0x0000000000000000000000000000000000000003'; // direccion sintetica interna de Symbiosis para USDC-Solana
 const DUMMY_TRON_ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
 const DUMMY_SOL_ADDR = 'So11111111111111111111111111111111111111112';
 const BITGET_TAKER_FEE = 0.001; // fee taker estandar de Bitget spot, sin descuento por BGB
@@ -513,19 +514,36 @@ async function quoteLifi(amount) {
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
-async function quoteRango(amount) {
+async function quoteSymbiosis(amount) {
   const amt = Math.round(amount * 1e6);
-  const from = `TRON.USDT--${USDT_TRON}`;
-  const to = `SOLANA.USDC--${USDC_SOL}`;
-  const url = `https://api.rango.exchange/basic/quote?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${amt}&apiKey=${RANGO_TEST_API_KEY}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  // Symbiosis representa tokens de chains no-EVM con direcciones sinteticas propias
+  // (ej. USDC-Solana = 0x000...003); la direccion real queda en tokenAmountOut.attributes.solana
+  const body = {
+    tokenAmountIn: {
+      address: SYMBIOSIS_USDT_TRON,
+      amount: String(amt),
+      chainId: 728126428,
+      decimals: 6
+    },
+    tokenOut: {
+      chainId: 5426,
+      address: SYMBIOSIS_USDC_SOL,
+      symbol: 'USDC',
+      decimals: 6
+    },
+    from: DUMMY_TRON_ADDR,
+    to: DUMMY_SOL_ADDR,
+    slippage: 300
+  };
+  const resp = await fetch('https://api.symbiosis.finance/crosschain/v2/quote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
   const d = await resp.json();
-  const route = d.route || d.result;
-  const outAmount = route && (route.outputAmount ?? route.output?.amount);
-  if (!outAmount) throw new Error((d.error || d.resultType) || 'Sin ruta disponible');
-  const neto = parseFloat(outAmount) / 1e6;
-  const seg = route.estimatedTimeInSeconds ?? route.estimatedTimeInSecond;
+  if (!resp.ok || !d.tokenAmountOut) throw new Error(d.message || ('HTTP ' + resp.status));
+  const neto = parseFloat(d.tokenAmountOut.amount) / 1e6;
+  const seg = d.estimatedTime;
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
@@ -595,7 +613,7 @@ btnCotizar.addEventListener('click', async () => {
     { nombre: 'Rhino.fi', fn: quoteRhino },
     { nombre: 'deBridge', fn: quoteDebridge },
     { nombre: 'LI.FI', fn: quoteLifi },
-    { nombre: 'Rango', fn: quoteRango }
+    { nombre: 'Symbiosis', fn: quoteSymbiosis }
   ];
 
   const resultados = await Promise.all(proveedores.map(async p => {
