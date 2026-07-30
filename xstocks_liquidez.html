@@ -22,6 +22,7 @@
     --muted: #8b949e;
     --accent: #14b8a6;
     --accent-dark: #062019;
+    --gold: #d4af37;
   }
   * { box-sizing: border-box; }
   body {
@@ -129,6 +130,48 @@
   }
   .badge-ok { background: rgba(63,185,80,0.15); color: var(--green); }
   .badge-warn { background: rgba(248,81,73,0.15); color: var(--red); }
+  .provider-row {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  .provider-row .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .provider-row .name { font-size: 14px; font-weight: 600; }
+  .provider-row .figures {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--muted);
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .provider-row.bitget { border-top: 1px solid var(--border); margin-top: 6px; }
+  .provider-row.bitget .name { color: var(--gold); }
+  .best-quote-box {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-top: 4px;
+  }
+  .best-quote-box .label { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .best-quote-box .row-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .best-quote-box .provider { font-size: 16px; font-weight: 600; }
+  .best-quote-box .amount { font-size: 24px; font-weight: 700; color: var(--accent); }
+  .best-quote-box .savings { font-size: 12px; color: var(--muted); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -180,8 +223,28 @@
     </div>
   </div>
 
+  <div class="panel">
+    <h2>3. Conversión USDT (TRON) → USDC (Solana)</h2>
+    <div class="desc">Compara proveedores DeFi cross-chain (solo lectura, sin conectar wallet ni ejecutar nada) y Bitget como referencia centralizada</div>
+    <div class="field">
+      <label>Monto USDT en TRON</label>
+      <input type="number" id="montoUsdt" value="1000" step="100">
+    </div>
+    <button id="btnCotizar" style="margin-top:10px;">Consultar cotizaciones</button>
+    <div class="status" id="cotizarStatus"></div>
+    <div id="providerRows" style="margin-top:12px;"></div>
+    <div class="best-quote-box" id="bestQuoteBox" style="display:none;">
+      <div class="label">Mejor cotización actual</div>
+      <div class="row-top">
+        <span class="provider" id="bestProvider">—</span>
+        <span class="amount" id="bestAmount">—</span>
+      </div>
+      <div class="savings" id="bestSavings"></div>
+    </div>
+  </div>
+
   <div class="note">
-    Nota: si el navegador bloquea alguna de las dos consultas por política CORS, esa sección específica no podrá traer los datos (la otra puede seguir funcionando de forma independiente).
+    Nota: si el navegador bloquea alguna de las tres consultas por política CORS, esa sección específica no podrá traer los datos (las otras pueden seguir funcionando de forma independiente).
   </div>
 </div>
 
@@ -400,6 +463,182 @@ btnListado.addEventListener('click', async () => {
     listStatus.innerHTML = `<span class="error">Error: ${err.message}. Posible bloqueo CORS o rate limit.</span>`;
   }
   btnListado.disabled = false;
+});
+
+// ===================== CARD 3: USDT (TRON) -> USDC (Solana), comparativa DeFi + Bitget =====================
+const montoUsdtInput = document.getElementById('montoUsdt');
+const btnCotizar = document.getElementById('btnCotizar');
+const cotizarStatus = document.getElementById('cotizarStatus');
+const providerRowsEl = document.getElementById('providerRows');
+const bestQuoteBox = document.getElementById('bestQuoteBox');
+const bestProviderEl = document.getElementById('bestProvider');
+const bestAmountEl = document.getElementById('bestAmount');
+const bestSavingsEl = document.getElementById('bestSavings');
+
+const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+const USDC_SOL = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const RANGO_TEST_API_KEY = 'c6381a79-2817-4602-83bf-6a641a409e32'; // key publica de test de Rango (rate limit bajo, no es secreta)
+const DUMMY_TRON_ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
+const DUMMY_SOL_ADDR = 'So11111111111111111111111111111111111111112';
+const BITGET_TAKER_FEE = 0.001; // fee taker estandar de Bitget spot, sin descuento por BGB
+
+async function quoteRhino(amount) {
+  const url = `https://api.rhino.fi/bridge/quote/bridge-swap/public?chainIn=TRON&chainOut=SOLANA&tokenIn=USDT&tokenOut=USDC&amount=${amount}&mode=pay`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const d = await resp.json();
+  if (!d.receiveAmount) throw new Error('Sin ruta disponible');
+  return { neto: parseFloat(d.receiveAmount), tiempo: d.speed === 'fast' ? '~1-2 min' : (d.speed || '—') };
+}
+
+async function quoteDebridge(amount) {
+  const amt = Math.round(amount * 1e6);
+  const url = `https://api.dln.trade/v1.0/dln/order/create-tx?srcChainId=100000026&srcChainTokenIn=${USDT_TRON}&srcChainTokenInAmount=${amt}&dstChainId=7565164&dstChainTokenOut=${USDC_SOL}`;
+  const resp = await fetch(url);
+  const d = await resp.json();
+  if (!resp.ok || !d.estimation) throw new Error(d.errorMessage || ('HTTP ' + resp.status));
+  const neto = parseFloat(d.estimation.dstChainTokenOut.amount) / 1e6;
+  const min = d.order && d.order.approximateFulfillmentDelay;
+  return { neto, tiempo: min ? `~${min} min` : '—' };
+}
+
+async function quoteLifi(amount) {
+  const amt = Math.round(amount * 1e6);
+  const url = `https://li.quest/v1/quote?fromChain=728126428&toChain=1151111081099710&fromToken=${USDT_TRON}&toToken=${USDC_SOL}&fromAmount=${amt}&fromAddress=${DUMMY_TRON_ADDR}&toAddress=${DUMMY_SOL_ADDR}`;
+  const resp = await fetch(url);
+  const d = await resp.json();
+  if (!resp.ok || !d.estimate) throw new Error(d.message || ('HTTP ' + resp.status));
+  const neto = parseFloat(d.estimate.toAmount) / 1e6;
+  const seg = d.estimate.executionDuration;
+  return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
+}
+
+async function quoteRango(amount) {
+  const amt = Math.round(amount * 1e6);
+  const from = `TRON.USDT--${USDT_TRON}`;
+  const to = `SOLANA.USDC--${USDC_SOL}`;
+  const url = `https://api.rango.exchange/basic/quote?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=${amt}&apiKey=${RANGO_TEST_API_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const d = await resp.json();
+  const route = d.route || d.result;
+  const outAmount = route && (route.outputAmount ?? route.output?.amount);
+  if (!outAmount) throw new Error((d.error || d.resultType) || 'Sin ruta disponible');
+  const neto = parseFloat(outAmount) / 1e6;
+  const seg = route.estimatedTimeInSeconds ?? route.estimatedTimeInSecond;
+  return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
+}
+
+async function quoteBitget(amount) {
+  const [tickerResp, coinResp] = await Promise.all([
+    fetch('https://api.bitget.com/api/v2/spot/market/tickers?symbol=USDCUSDT'),
+    fetch('https://api.bitget.com/api/v2/spot/public/coins?coin=USDC')
+  ]);
+  if (!tickerResp.ok || !coinResp.ok) throw new Error('HTTP error');
+  const tickerJson = await tickerResp.json();
+  const coinJson = await coinResp.json();
+  const askPrice = parseFloat(tickerJson.data[0].askPr);
+  const solChain = (coinJson.data[0].chains || []).find(c => c.chain === 'SOL');
+  if (!solChain) throw new Error('Sin dato de retiro por Solana');
+  const withdrawFee = parseFloat(solChain.withdrawFee);
+  const gross = amount / askPrice;
+  const afterTrade = gross * (1 - BITGET_TAKER_FEE);
+  const neto = afterTrade - withdrawFee;
+  return { neto };
+}
+
+function normalizarError(err) {
+  const msg = (err && err.message) || '';
+  if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.startsWith('HTTP')) return 'API no disponible';
+  if (msg.includes('Sin ruta')) return 'Sin ruta disponible';
+  return msg || 'API no disponible';
+}
+
+function renderProviderRow(nombre, resultado, esBitget) {
+  const rowClass = esBitget ? 'provider-row bitget' : 'provider-row';
+  const nombreMostrado = esBitget ? 'Bitget — referencia centralizada' : nombre;
+  if (resultado.error) {
+    return `<div class="${rowClass}">
+      <div class="head">
+        <span class="name">${nombreMostrado}</span>
+        <span class="badge badge-warn">${resultado.error}</span>
+      </div>
+    </div>`;
+  }
+  const costo = resultado.monto - resultado.neto;
+  const costoPct = (costo / resultado.monto * 100).toFixed(3);
+  return `<div class="${rowClass}">
+    <div class="head">
+      <span class="name">${nombreMostrado}</span>
+      <span class="badge badge-ok">Disponible</span>
+    </div>
+    <div class="figures">
+      <span>${resultado.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USDC</span>
+      <span>-$${costo.toFixed(2)} (${costoPct}%)</span>
+      <span>${resultado.tiempo || ''}</span>
+    </div>
+  </div>`;
+}
+
+btnCotizar.addEventListener('click', async () => {
+  const monto = parseFloat(montoUsdtInput.value);
+  if (!monto || monto <= 0) {
+    cotizarStatus.innerHTML = '<span class="error">Ingrese un monto válido.</span>';
+    return;
+  }
+  btnCotizar.disabled = true;
+  cotizarStatus.textContent = 'Consultando proveedores...';
+  bestQuoteBox.style.display = 'none';
+  providerRowsEl.innerHTML = '';
+
+  const proveedores = [
+    { nombre: 'Rhino.fi', fn: quoteRhino },
+    { nombre: 'deBridge', fn: quoteDebridge },
+    { nombre: 'LI.FI', fn: quoteLifi },
+    { nombre: 'Rango', fn: quoteRango }
+  ];
+
+  const resultados = await Promise.all(proveedores.map(async p => {
+    try {
+      const r = await p.fn(monto);
+      return { nombre: p.nombre, monto, neto: r.neto, tiempo: r.tiempo };
+    } catch (err) {
+      return { nombre: p.nombre, error: normalizarError(err) };
+    }
+  }));
+
+  let bitgetResult;
+  try {
+    const r = await quoteBitget(monto);
+    bitgetResult = { nombre: 'Bitget', monto, neto: r.neto };
+  } catch (err) {
+    bitgetResult = { nombre: 'Bitget', error: normalizarError(err) };
+  }
+
+  const validos = resultados.filter(r => !r.error);
+  validos.sort((a, b) => b.neto - a.neto);
+  const invalidos = resultados.filter(r => r.error);
+
+  providerRowsEl.innerHTML = [...validos, ...invalidos].map(r => renderProviderRow(r.nombre, r, false)).join('')
+    + renderProviderRow('Bitget', bitgetResult, true);
+
+  if (validos.length > 0) {
+    const mejor = validos[0];
+    bestProviderEl.textContent = mejor.nombre;
+    bestAmountEl.textContent = mejor.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDC';
+    if (!bitgetResult.error) {
+      const ahorro = mejor.neto - bitgetResult.neto;
+      bestSavingsEl.textContent = `Ahorro frente a Bitget: ${ahorro >= 0 ? '+' : ''}${ahorro.toFixed(2)} USDC`;
+    } else {
+      bestSavingsEl.textContent = '';
+    }
+    bestQuoteBox.style.display = 'block';
+    cotizarStatus.textContent = `Listo — ${validos.length} de ${proveedores.length} proveedores DeFi respondieron.`;
+  } else {
+    cotizarStatus.innerHTML = '<span class="error">Ningún proveedor DeFi respondió. Intente de nuevo.</span>';
+  }
+
+  btnCotizar.disabled = false;
 });
 </script>
 </body>
