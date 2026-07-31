@@ -358,6 +358,11 @@
       <button type="button" class="addr-btn delete" id="btnDeleteTrust">Borrar</button>
     </div>
 
+    <div class="field" style="margin-top:14px;">
+      <label>Vigencia del depósito (minutos, 1 a 60)</label>
+      <input type="number" id="vigenciaMin" value="5" min="1" max="60" step="1">
+    </div>
+
     <button id="btnGenerarDeposito" style="margin-top:14px;">Generar dirección de depósito</button>
     <div class="status" id="depositoStatus"></div>
 
@@ -856,6 +861,7 @@ const btnDeleteSolflare = document.getElementById('btnDeleteSolflare');
 const btnPasteTrust = document.getElementById('btnPasteTrust');
 const btnDeleteTrust = document.getElementById('btnDeleteTrust');
 const btnGenerarDeposito = document.getElementById('btnGenerarDeposito');
+const vigenciaMinInput = document.getElementById('vigenciaMin');
 const depositoStatus = document.getElementById('depositoStatus');
 const depositoResult = document.getElementById('depositoResult');
 const depositAddrEl = document.getElementById('depositAddr');
@@ -932,6 +938,10 @@ btnGenerarDeposito.addEventListener('click', async () => {
     depositoStatus.innerHTML = '<span class="error">Ingrese su dirección de Trust (Tron).</span>';
     return;
   }
+  let vigenciaMin = parseInt(vigenciaMinInput.value);
+  if (!vigenciaMin || vigenciaMin < 1) vigenciaMin = 1;
+  if (vigenciaMin > 60) vigenciaMin = 60;
+  vigenciaMinInput.value = vigenciaMin;
 
   await guardarDirecciones();
   btnGenerarDeposito.disabled = true;
@@ -940,7 +950,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
 
   try {
     const amt = Math.round(monto * 1e6);
-    const deadline = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const deadline = new Date(Date.now() + vigenciaMin * 60 * 1000).toISOString();
     const body = {
       dry: false,
       swapType: 'EXACT_INPUT',
