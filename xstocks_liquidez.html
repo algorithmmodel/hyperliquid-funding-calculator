@@ -234,6 +234,25 @@
   }
   .deposito-monto-input:focus { outline: none; border-color: var(--accent); }
   .deposito-monto-note { width: 100%; font-size: 12px; color: var(--muted); font-weight: 400; }
+  .network-select { display: flex; gap: 8px; margin-bottom: 14px; }
+  .network-btn {
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #0d1117;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .network-btn.active { color: var(--text); border-color: var(--accent); background: #132320; }
+  .network-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .network-dot.sol { background: #9945FF; }
+  .network-dot.arb { background: #28A0F0; }
 </style>
 </head>
 <body>
@@ -286,8 +305,13 @@
   </div>
 
   <div class="panel">
-    <h2>3. Conversión USDT (TRON) → USDC (Solana)</h2>
+    <h2>3. Conversión USDT (TRON) → USDC</h2>
     <div class="desc">Compara proveedores DeFi cross-chain (solo lectura, sin conectar wallet ni ejecutar nada) y Bitget como referencia centralizada</div>
+    <label>Red de destino</label>
+    <div class="network-select" id="networkSelectCard3">
+      <button type="button" class="network-btn active" data-network="SOL"><span class="network-dot sol"></span>SOL</button>
+      <button type="button" class="network-btn" data-network="ARB"><span class="network-dot arb"></span>ARB</button>
+    </div>
     <div class="field">
       <label>Monto USDT en TRON</label>
       <input type="number" id="montoUsdt" value="1000" step="100">
@@ -309,14 +333,20 @@
     <h2>4. Generar depósito real (NEAR Intents)</h2>
     <div class="desc">Sin conectar wallet: mandás los USDT como una transferencia común a la dirección que te damos acá</div>
 
+    <label>Red de destino</label>
+    <div class="network-select" id="networkSelectCard4">
+      <button type="button" class="network-btn active" data-network="SOL"><span class="network-dot sol"></span>SOL</button>
+      <button type="button" class="network-btn" data-network="ARB"><span class="network-dot arb"></span>ARB</button>
+    </div>
+
     <div class="deposito-monto">
       Depósito USDT: <input type="number" id="depositoMonto" class="deposito-monto-input" step="100">
       <div class="deposito-monto-note">Por defecto toma el de la Card 3, pero podés cambiarlo acá sin afectar la comparativa de arriba</div>
     </div>
 
-    <label>Tu dirección Solflare (Solana) — destino</label>
+    <label>Tu dirección de destino (según la red elegida arriba)</label>
     <div class="addr-row">
-      <input type="text" id="solflareAddr" placeholder="Pegá tu dirección de Solana...">
+      <input type="text" id="solflareAddr" placeholder="Pegá tu dirección de destino...">
       <button type="button" class="addr-btn paste" id="btnPasteSolflare">Pegar</button>
       <button type="button" class="addr-btn delete" id="btnDeleteSolflare">Borrar</button>
     </div>
@@ -584,16 +614,53 @@ const bestAmountEl = document.getElementById('bestAmount');
 const bestSavingsEl = document.getElementById('bestSavings');
 
 const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-const USDC_SOL = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const NEAR_ORIGIN_ASSET = 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near'; // USDT-Tron en NEAR Intents
-const NEAR_DEST_ASSET = 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near'; // USDC-Solana en NEAR Intents
 const DUMMY_TRON_ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
-const DUMMY_SOL_ADDR = 'So11111111111111111111111111111111111111112';
 const BITGET_TAKER_FEE = 0.001; // fee taker estandar de Bitget spot, sin descuento por BGB
 
-async function quoteDebridge(amount) {
+// Configuracion por red de destino: cada proveedor necesita su propio formato de chain/token
+const NETWORKS = {
+  SOL: {
+    usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    dummyAddr: 'So11111111111111111111111111111111111111112',
+    debridgeChainId: 7565164,
+    lifiChainId: 1151111081099710,
+    chainflipChain: 'Solana',
+    nearAsset: 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near',
+    bitgetChain: 'SOL'
+  },
+  ARB: {
+    usdc: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+    dummyAddr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    debridgeChainId: 42161,
+    lifiChainId: 42161,
+    chainflipChain: 'Arbitrum',
+    nearAsset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near',
+    bitgetChain: 'ArbitrumOne'
+  }
+};
+
+function activarSelectorRed(containerId, onChange) {
+  const container = document.getElementById(containerId);
+  let seleccionada = 'SOL';
+  container.querySelectorAll('.network-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      seleccionada = btn.dataset.network;
+      container.querySelectorAll('.network-btn').forEach(b => b.classList.toggle('active', b === btn));
+      if (onChange) onChange(seleccionada);
+    });
+  });
+  return { get: () => seleccionada };
+}
+let redCard3 = 'SOL';
+const selectorCard3 = activarSelectorRed('networkSelectCard3', (red) => { redCard3 = red; });
+let redCard4 = 'SOL';
+const selectorCard4 = activarSelectorRed('networkSelectCard4', (red) => { redCard4 = red; });
+
+async function quoteDebridge(amount, network) {
+  const net = NETWORKS[network];
   const amt = Math.round(amount * 1e6);
-  const url = `https://api.dln.trade/v1.0/dln/order/create-tx?srcChainId=100000026&srcChainTokenIn=${USDT_TRON}&srcChainTokenInAmount=${amt}&dstChainId=7565164&dstChainTokenOut=${USDC_SOL}`;
+  const url = `https://api.dln.trade/v1.0/dln/order/create-tx?srcChainId=100000026&srcChainTokenIn=${USDT_TRON}&srcChainTokenInAmount=${amt}&dstChainId=${net.debridgeChainId}&dstChainTokenOut=${net.usdc}`;
   const resp = await fetch(url);
   const d = await resp.json();
   if (!resp.ok || !d.estimation) throw new Error(d.errorMessage || ('HTTP ' + resp.status));
@@ -602,9 +669,10 @@ async function quoteDebridge(amount) {
   return { neto, tiempo: min ? `~${min} min` : '—' };
 }
 
-async function quoteLifi(amount) {
+async function quoteLifi(amount, network) {
+  const net = NETWORKS[network];
   const amt = Math.round(amount * 1e6);
-  const url = `https://li.quest/v1/quote?fromChain=728126428&toChain=1151111081099710&fromToken=${USDT_TRON}&toToken=${USDC_SOL}&fromAmount=${amt}&fromAddress=${DUMMY_TRON_ADDR}&toAddress=${DUMMY_SOL_ADDR}`;
+  const url = `https://li.quest/v1/quote?fromChain=728126428&toChain=${net.lifiChainId}&fromToken=${USDT_TRON}&toToken=${net.usdc}&fromAmount=${amt}&fromAddress=${DUMMY_TRON_ADDR}&toAddress=${net.dummyAddr}`;
   const resp = await fetch(url);
   const d = await resp.json();
   if (!resp.ok || !d.estimate) throw new Error(d.message || ('HTTP ' + resp.status));
@@ -613,9 +681,10 @@ async function quoteLifi(amount) {
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
-async function quoteChainflip(amount) {
+async function quoteChainflip(amount, network) {
+  const net = NETWORKS[network];
   const amt = Math.round(amount * 1e6);
-  const url = `https://chainflip-swap.chainflip.io/v2/quote?srcChain=Tron&srcAsset=USDT&destChain=Solana&destAsset=USDC&amount=${amt}&brokerCommissionBps=0&dcaEnabled=false`;
+  const url = `https://chainflip-swap.chainflip.io/v2/quote?srcChain=Tron&srcAsset=USDT&destChain=${net.chainflipChain}&destAsset=USDC&amount=${amt}&brokerCommissionBps=0&dcaEnabled=false`;
   const resp = await fetch(url);
   const d = await resp.json();
   if (!resp.ok || !Array.isArray(d) || !d[0] || !d[0].egressAmount) throw new Error((d && d.message) || ('HTTP ' + resp.status));
@@ -624,19 +693,20 @@ async function quoteChainflip(amount) {
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
-async function quoteNearIntents(amount) {
+async function quoteNearIntents(amount, network) {
+  const net = NETWORKS[network];
   const amt = Math.round(amount * 1e6);
   const deadline = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   const body = {
     dry: true,
     swapType: 'EXACT_INPUT',
     originAsset: NEAR_ORIGIN_ASSET,
-    destinationAsset: NEAR_DEST_ASSET,
+    destinationAsset: net.nearAsset,
     amount: String(amt),
     slippageTolerance: 100,
     deadline,
     depositType: 'ORIGIN_CHAIN',
-    recipient: DUMMY_SOL_ADDR,
+    recipient: net.dummyAddr,
     recipientType: 'DESTINATION_CHAIN',
     refundTo: DUMMY_TRON_ADDR,
     refundType: 'ORIGIN_CHAIN'
@@ -653,7 +723,8 @@ async function quoteNearIntents(amount) {
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
-async function quoteBitget(amount) {
+async function quoteBitget(amount, network) {
+  const net = NETWORKS[network];
   const [tickerResp, coinResp] = await Promise.all([
     fetch('https://api.bitget.com/api/v2/spot/market/tickers?symbol=USDCUSDT'),
     fetch('https://api.bitget.com/api/v2/spot/public/coins?coin=USDC')
@@ -662,9 +733,9 @@ async function quoteBitget(amount) {
   const tickerJson = await tickerResp.json();
   const coinJson = await coinResp.json();
   const askPrice = parseFloat(tickerJson.data[0].askPr);
-  const solChain = (coinJson.data[0].chains || []).find(c => c.chain === 'SOL');
-  if (!solChain) throw new Error('Sin dato de retiro por Solana');
-  const withdrawFee = parseFloat(solChain.withdrawFee);
+  const chainInfo = (coinJson.data[0].chains || []).find(c => c.chain === net.bitgetChain);
+  if (!chainInfo) throw new Error('Sin dato de retiro para esta red');
+  const withdrawFee = parseFloat(chainInfo.withdrawFee);
   const gross = amount / askPrice;
   const afterTrade = gross * (1 - BITGET_TAKER_FEE);
   const neto = afterTrade - withdrawFee;
@@ -736,7 +807,7 @@ btnCotizar.addEventListener('click', async () => {
 
   const resultados = await Promise.all(proveedores.map(async p => {
     try {
-      const r = await p.fn(monto);
+      const r = await p.fn(monto, redCard3);
       return { nombre: p.nombre, monto, neto: r.neto, tiempo: r.tiempo };
     } catch (err) {
       return { nombre: p.nombre, error: normalizarError(err) };
@@ -745,7 +816,7 @@ btnCotizar.addEventListener('click', async () => {
 
   let bitgetResult;
   try {
-    const r = await quoteBitget(monto);
+    const r = await quoteBitget(monto, redCard3);
     bitgetResult = { nombre: 'Bitget', monto, neto: r.neto };
   } catch (err) {
     bitgetResult = { nombre: 'Bitget', error: normalizarError(err) };
@@ -854,7 +925,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
     return;
   }
   if (!solflare) {
-    depositoStatus.innerHTML = '<span class="error">Ingrese su dirección de Solflare.</span>';
+    depositoStatus.innerHTML = '<span class="error">Ingrese su dirección de destino.</span>';
     return;
   }
   if (!trust) {
@@ -874,7 +945,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
       dry: false,
       swapType: 'EXACT_INPUT',
       originAsset: NEAR_ORIGIN_ASSET,
-      destinationAsset: NEAR_DEST_ASSET,
+      destinationAsset: NETWORKS[redCard4].nearAsset,
       amount: String(amt),
       slippageTolerance: 100,
       deadline,
