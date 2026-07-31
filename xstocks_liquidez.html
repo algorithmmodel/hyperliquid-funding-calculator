@@ -480,8 +480,8 @@ const bestSavingsEl = document.getElementById('bestSavings');
 
 const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const USDC_SOL = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const SYMBIOSIS_USDT_TRON = '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'; // direccion sintetica interna de Symbiosis para USDT-Tron
-const SYMBIOSIS_USDC_SOL = '0x0000000000000000000000000000000000000003'; // direccion sintetica interna de Symbiosis para USDC-Solana
+const NEAR_ORIGIN_ASSET = 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near'; // USDT-Tron en NEAR Intents
+const NEAR_DEST_ASSET = 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near'; // USDC-Solana en NEAR Intents
 const DUMMY_TRON_ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
 const DUMMY_SOL_ADDR = 'So11111111111111111111111111111111111111112';
 const BITGET_TAKER_FEE = 0.001; // fee taker estandar de Bitget spot, sin descuento por BGB
@@ -508,36 +508,43 @@ async function quoteLifi(amount) {
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
-async function quoteSymbiosis(amount) {
+async function quoteChainflip(amount) {
   const amt = Math.round(amount * 1e6);
-  // Symbiosis representa tokens de chains no-EVM con direcciones sinteticas propias
-  // (ej. USDC-Solana = 0x000...003); la direccion real queda en tokenAmountOut.attributes.solana
+  const url = `https://chainflip-swap.chainflip.io/v2/quote?srcChain=Tron&srcAsset=USDT&destChain=Solana&destAsset=USDC&amount=${amt}&brokerCommissionBps=0&dcaEnabled=false`;
+  const resp = await fetch(url);
+  const d = await resp.json();
+  if (!resp.ok || !Array.isArray(d) || !d[0] || !d[0].egressAmount) throw new Error((d && d.message) || ('HTTP ' + resp.status));
+  const neto = parseFloat(d[0].egressAmount) / 1e6;
+  const seg = d[0].estimatedDurationSeconds;
+  return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
+}
+
+async function quoteNearIntents(amount) {
+  const amt = Math.round(amount * 1e6);
+  const deadline = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   const body = {
-    tokenAmountIn: {
-      address: SYMBIOSIS_USDT_TRON,
-      amount: String(amt),
-      chainId: 728126428,
-      decimals: 6
-    },
-    tokenOut: {
-      chainId: 5426,
-      address: SYMBIOSIS_USDC_SOL,
-      symbol: 'USDC',
-      decimals: 6
-    },
-    from: DUMMY_TRON_ADDR,
-    to: DUMMY_SOL_ADDR,
-    slippage: 300
+    dry: true,
+    swapType: 'EXACT_INPUT',
+    originAsset: NEAR_ORIGIN_ASSET,
+    destinationAsset: NEAR_DEST_ASSET,
+    amount: String(amt),
+    slippageTolerance: 100,
+    deadline,
+    depositType: 'ORIGIN_CHAIN',
+    recipient: DUMMY_SOL_ADDR,
+    recipientType: 'DESTINATION_CHAIN',
+    refundTo: DUMMY_TRON_ADDR,
+    refundType: 'ORIGIN_CHAIN'
   };
-  const resp = await fetch('https://api.symbiosis.finance/crosschain/v2/quote', {
+  const resp = await fetch('https://1click.chaindefuser.com/v0/quote', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
   const d = await resp.json();
-  if (!resp.ok || !d.tokenAmountOut) throw new Error(d.message || ('HTTP ' + resp.status));
-  const neto = parseFloat(d.tokenAmountOut.amount) / 1e6;
-  const seg = d.estimatedTime;
+  if (!resp.ok || !d.quote) throw new Error(d.message || ('HTTP ' + resp.status));
+  const neto = parseFloat(d.quote.amountOut) / 1e6;
+  const seg = d.quote.timeEstimate;
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
@@ -569,7 +576,8 @@ function normalizarError(err) {
 const PROVIDER_URLS = {
   'deBridge': 'https://debridge.com',
   'LI.FI': 'https://li.fi',
-  'Symbiosis': 'https://symbiosis.finance',
+  'Chainflip': 'https://chainflip.io',
+  'NEAR Intents': 'https://near-intents.org',
   'Bitget': 'https://www.bitget.com'
 };
 
@@ -617,7 +625,8 @@ btnCotizar.addEventListener('click', async () => {
   const proveedores = [
     { nombre: 'deBridge', fn: quoteDebridge },
     { nombre: 'LI.FI', fn: quoteLifi },
-    { nombre: 'Symbiosis', fn: quoteSymbiosis }
+    { nombre: 'Chainflip', fn: quoteChainflip },
+    { nombre: 'NEAR Intents', fn: quoteNearIntents }
   ];
 
   const resultados = await Promise.all(proveedores.map(async p => {
