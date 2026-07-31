@@ -143,7 +143,9 @@
     align-items: center;
     margin-bottom: 6px;
   }
-  .provider-row .name { font-size: 14px; font-weight: 600; }
+  .provider-row .name { font-size: 14px; font-weight: 600; color: var(--text); text-decoration: none; }
+  .provider-row .name:hover { text-decoration: underline; }
+  .provider-row.winner { box-shadow: 0 0 16px 2px rgba(20,184,166,0.45); border-color: var(--accent); }
   .provider-row .figures {
     display: flex;
     justify-content: space-between;
@@ -573,13 +575,25 @@ function normalizarError(err) {
   return msg || 'API no disponible';
 }
 
-function renderProviderRow(nombre, resultado, esBitget) {
-  const rowClass = esBitget ? 'provider-row bitget' : 'provider-row';
+const PROVIDER_URLS = {
+  'Rhino.fi': 'https://rhino.fi',
+  'deBridge': 'https://debridge.com',
+  'LI.FI': 'https://li.fi',
+  'Symbiosis': 'https://symbiosis.finance',
+  'Bitget': 'https://www.bitget.com'
+};
+
+function renderProviderRow(nombre, resultado, esBitget, esGanador) {
+  const rowClass = 'provider-row' + (esBitget ? ' bitget' : '') + (esGanador ? ' winner' : '');
   const nombreMostrado = esBitget ? 'Bitget — referencia centralizada' : nombre;
+  const url = PROVIDER_URLS[nombre];
+  const nombreHtml = url
+    ? `<a class="name" href="${url}" target="_blank" rel="noopener">${nombreMostrado}</a>`
+    : `<span class="name">${nombreMostrado}</span>`;
   if (resultado.error) {
     return `<div class="${rowClass}">
       <div class="head">
-        <span class="name">${nombreMostrado}</span>
+        ${nombreHtml}
         <span class="badge badge-warn">${resultado.error}</span>
       </div>
     </div>`;
@@ -588,7 +602,7 @@ function renderProviderRow(nombre, resultado, esBitget) {
   const costoPct = (costo / resultado.monto * 100).toFixed(3);
   return `<div class="${rowClass}">
     <div class="head">
-      <span class="name">${nombreMostrado}</span>
+      ${nombreHtml}
       <span class="badge badge-ok">Disponible</span>
     </div>
     <div class="figures">
@@ -638,8 +652,8 @@ btnCotizar.addEventListener('click', async () => {
   validos.sort((a, b) => b.neto - a.neto);
   const invalidos = resultados.filter(r => r.error);
 
-  providerRowsEl.innerHTML = [...validos, ...invalidos].map(r => renderProviderRow(r.nombre, r, false)).join('')
-    + renderProviderRow('Bitget', bitgetResult, true);
+  providerRowsEl.innerHTML = [...validos, ...invalidos].map((r, i) => renderProviderRow(r.nombre, r, false, i === 0 && validos.length > 0)).join('')
+    + renderProviderRow('Bitget', bitgetResult, true, false);
 
   if (validos.length > 0) {
     const mejor = validos[0];
