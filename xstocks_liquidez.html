@@ -392,6 +392,20 @@
 </div>
 
 <script>
+// ===================== Utilidad: escapado de texto proveniente de APIs externas =====================
+// Todo dato que llega de una API de terceros (Jupiter, CoinGecko, deBridge, LI.FI,
+// Chainflip, NEAR Intents, Bitget) o de un mensaje de error se inserta como texto
+// plano, nunca como HTML. Sin esto, un token con symbol/name malicioso o una API
+// que devuelva un mensaje con etiquetas podria ejecutar JS en la pagina.
+function esc(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ===================== CARD 1: Búsqueda individual vía Jupiter =====================
 const tickerSearch = document.getElementById('tickerSearch');
 const suggestionsEl = document.getElementById('suggestions');
@@ -421,18 +435,18 @@ async function searchTokens(query) {
       return;
     }
     suggestionsEl.innerHTML = results.slice(0, 20).map(t => {
-      const symbol = t.symbol || '?';
-      const name = t.name || '';
-      const addr = t.id || t.address || '';
-      return `<div class="suggestion-item" data-addr="${addr}" data-symbol="${symbol}" data-name="${name}">
-        <span>${symbol} <span style="color:var(--muted);">— ${name}</span></span>
-        <span class="suggestion-tag">${addr.slice(0,4)}...${addr.slice(-4)}</span>
+      const symbol = String(t.symbol || '?');
+      const name = String(t.name || '');
+      const addr = String(t.id || t.address || '');
+      return `<div class="suggestion-item" data-addr="${esc(addr)}" data-symbol="${esc(symbol)}" data-name="${esc(name)}">
+        <span>${esc(symbol)} <span style="color:var(--muted);">— ${esc(name)}</span></span>
+        <span class="suggestion-tag">${esc(addr.slice(0,4))}...${esc(addr.slice(-4))}</span>
       </div>`;
     }).join('');
     suggestionsEl.classList.add('open');
     searchStatus.textContent = `${results.length} resultado(s). Elija uno.`;
   } catch (err) {
-    searchStatus.innerHTML = `<span class="error">Error al buscar: ${err.message}. Posible bloqueo CORS.</span>`;
+    searchStatus.innerHTML = `<span class="error">Error al buscar: ${esc(err.message)}. Posible bloqueo CORS.</span>`;
   }
 }
 
@@ -498,7 +512,7 @@ btnConsultar.addEventListener('click', async () => {
     resultCard.style.display = 'block';
     searchStatus.textContent = 'Listo.';
   } catch (err) {
-    searchStatus.innerHTML = `<span class="error">Error: ${err.message}. Posible bloqueo CORS.</span>`;
+    searchStatus.innerHTML = `<span class="error">Error: ${esc(err.message)}. Posible bloqueo CORS.</span>`;
   }
   btnConsultar.disabled = false;
 });
@@ -592,18 +606,21 @@ btnListado.addEventListener('click', async () => {
       return;
     }
 
-    listTbody.innerHTML = filtrados.map(t => `
+    listTbody.innerHTML = filtrados.map(t => {
+      const precio = Number(t.jupPrice ?? t.price ?? 0);
+      return `
       <tr>
-        <td>${(t.symbol || '').toUpperCase()}</td>
-        <td>$${(t.jupPrice ?? t.price ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
-        <td>$${(t.liquidity/1e3).toFixed(1)}K</td>
-        <td>$${((t.mcap || 0)/1e6).toFixed(1)}M</td>
+        <td>${esc(String(t.symbol || '').toUpperCase())}</td>
+        <td>$${esc(precio.toLocaleString('en-US', { maximumFractionDigits: 2 }))}</td>
+        <td>$${esc((t.liquidity/1e3).toFixed(1))}K</td>
+        <td>$${esc(((Number(t.mcap) || 0)/1e6).toFixed(1))}M</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
     listTable.style.display = 'table';
     listStatus.textContent = `${filtrados.length} xStock(s) con liquidez real > $${pisoFinal.toLocaleString('en-US')} (de ${catData.length} totales en la categoría).`;
   } catch (err) {
-    listStatus.innerHTML = `<span class="error">Error: ${err.message}. Posible bloqueo CORS o rate limit.</span>`;
+    listStatus.innerHTML = `<span class="error">Error: ${esc(err.message)}. Posible bloqueo CORS o rate limit.</span>`;
   }
   btnListado.disabled = false;
 });
@@ -773,7 +790,7 @@ function renderProviderRow(nombre, resultado, esBitget, esGanador) {
     return `<div class="${rowClass}">
       <div class="head">
         ${nombreHtml}
-        <span class="badge badge-warn">${resultado.error}</span>
+        <span class="badge badge-warn">${esc(resultado.error)}</span>
       </div>
     </div>`;
   }
@@ -785,9 +802,9 @@ function renderProviderRow(nombre, resultado, esBitget, esGanador) {
       <span class="badge badge-ok">Disponible</span>
     </div>
     <div class="figures">
-      <span>${resultado.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USDC</span>
-      <span>-$${costo.toFixed(2)} (${costoPct}%)</span>
-      <span>${resultado.tiempo || ''}</span>
+      <span>${esc(resultado.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}))} USDC</span>
+      <span>-$${esc(costo.toFixed(2))} (${esc(costoPct)}%)</span>
+      <span>${esc(resultado.tiempo || '')}</span>
     </div>
   </div>`;
 }
@@ -981,7 +998,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
     depositoResult.style.display = 'block';
     depositoStatus.textContent = 'Listo — revisá que las direcciones de arriba sean las tuyas antes de mandar los fondos.';
   } catch (err) {
-    depositoStatus.innerHTML = `<span class="error">Error: ${err.message || 'API no disponible'}</span>`;
+    depositoStatus.innerHTML = `<span class="error">Error: ${esc(err.message || 'API no disponible')}</span>`;
   }
 
   btnGenerarDeposito.disabled = false;
