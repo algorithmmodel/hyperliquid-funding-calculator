@@ -221,8 +221,19 @@
     font-size: 12px;
     color: var(--red);
   }
-  .deposito-monto { font-size: 14px; color: var(--text); font-weight: 600; margin-bottom: 16px; }
-  .deposito-monto-note { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+  .deposito-monto { font-size: 14px; color: var(--text); font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .deposito-monto-input {
+    width: 140px;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-weight: 700;
+    font-size: 15px;
+    padding: 8px 10px;
+  }
+  .deposito-monto-input:focus { outline: none; border-color: var(--accent); }
+  .deposito-monto-note { width: 100%; font-size: 12px; color: var(--muted); font-weight: 400; }
 </style>
 </head>
 <body>
@@ -299,8 +310,8 @@
     <div class="desc">Sin conectar wallet: mandás los USDT como una transferencia común a la dirección que te damos acá</div>
 
     <div class="deposito-monto">
-      Monto a depositar: <span id="depositoMontoDisplay">—</span> USDT
-      <div class="deposito-monto-note">(el mismo que cargaste en la Card 3, arriba)</div>
+      Depósito USDT: <input type="number" id="depositoMonto" class="deposito-monto-input" step="100">
+      <div class="deposito-monto-note">Por defecto toma el de la Card 3, pero podés cambiarlo acá sin afectar la comparativa de arriba</div>
     </div>
 
     <label>Tu dirección Solflare (Solana) — destino</label>
@@ -780,14 +791,9 @@ const depositAddrEl = document.getElementById('depositAddr');
 const depositAmountEl = document.getElementById('depositAmount');
 const depositDeadlineEl = document.getElementById('depositDeadline');
 const btnCopyDeposit = document.getElementById('btnCopyDeposit');
-const depositoMontoDisplay = document.getElementById('depositoMontoDisplay');
+const depositoMontoInput = document.getElementById('depositoMonto');
 
-function actualizarMontoDeposito() {
-  const monto = parseFloat(montoUsdtInput.value);
-  depositoMontoDisplay.textContent = monto > 0 ? monto.toLocaleString('en-US') : '—';
-}
-montoUsdtInput.addEventListener('input', actualizarMontoDeposito);
-actualizarMontoDeposito();
+depositoMontoInput.value = montoUsdtInput.value;
 
 async function loadDireccionesGuardadas() {
   try {
@@ -839,12 +845,12 @@ btnCopyDeposit.addEventListener('click', async () => {
 });
 
 btnGenerarDeposito.addEventListener('click', async () => {
-  const monto = parseFloat(montoUsdtInput.value);
+  const monto = parseFloat(depositoMontoInput.value);
   const solflare = solflareAddrInput.value.trim();
   const trust = trustAddrInput.value.trim();
 
   if (!monto || monto <= 0) {
-    depositoStatus.innerHTML = '<span class="error">Ingrese un monto válido en la Card 3.</span>';
+    depositoStatus.innerHTML = '<span class="error">Ingrese un monto válido.</span>';
     return;
   }
   if (!solflare) {
