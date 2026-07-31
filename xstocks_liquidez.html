@@ -221,6 +221,8 @@
     font-size: 12px;
     color: var(--red);
   }
+  .deposito-monto { font-size: 14px; color: var(--text); font-weight: 600; margin-bottom: 16px; }
+  .deposito-monto-note { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -295,6 +297,11 @@
   <div class="panel">
     <h2>4. Generar depósito real (NEAR Intents)</h2>
     <div class="desc">Sin conectar wallet: mandás los USDT como una transferencia común a la dirección que te damos acá</div>
+
+    <div class="deposito-monto">
+      Monto a depositar: <span id="depositoMontoDisplay">—</span> USDT
+      <div class="deposito-monto-note">(el mismo que cargaste en la Card 3, arriba)</div>
+    </div>
 
     <label>Tu dirección Solflare (Solana) — destino</label>
     <div class="addr-row">
@@ -773,6 +780,14 @@ const depositAddrEl = document.getElementById('depositAddr');
 const depositAmountEl = document.getElementById('depositAmount');
 const depositDeadlineEl = document.getElementById('depositDeadline');
 const btnCopyDeposit = document.getElementById('btnCopyDeposit');
+const depositoMontoDisplay = document.getElementById('depositoMontoDisplay');
+
+function actualizarMontoDeposito() {
+  const monto = parseFloat(montoUsdtInput.value);
+  depositoMontoDisplay.textContent = monto > 0 ? monto.toLocaleString('en-US') : '—';
+}
+montoUsdtInput.addEventListener('input', actualizarMontoDeposito);
+actualizarMontoDeposito();
 
 async function loadDireccionesGuardadas() {
   try {
