@@ -568,7 +568,7 @@ async function quoteBitget(amount) {
 
 function normalizarError(err) {
   const msg = (err && err.message) || '';
-  if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.startsWith('HTTP')) return 'API no disponible';
+  if (msg.includes('Failed to fetch') || msg.includes('Load failed') || msg.includes('NetworkError') || msg.startsWith('HTTP')) return 'API no disponible';
   if (msg.includes('Sin ruta')) return 'Sin ruta disponible';
   return msg || 'API no disponible';
 }
