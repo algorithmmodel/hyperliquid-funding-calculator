@@ -486,15 +486,6 @@ const DUMMY_TRON_ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
 const DUMMY_SOL_ADDR = 'So11111111111111111111111111111111111111112';
 const BITGET_TAKER_FEE = 0.001; // fee taker estandar de Bitget spot, sin descuento por BGB
 
-async function quoteRhino(amount) {
-  const url = `https://api.rhino.fi/bridge/quote/bridge-swap/public?chainIn=TRON&chainOut=SOLANA&tokenIn=USDT&tokenOut=USDC&amount=${amount}&mode=pay`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const d = await resp.json();
-  if (!d.receiveAmount) throw new Error('Sin ruta disponible');
-  return { neto: parseFloat(d.receiveAmount), tiempo: d.speed === 'fast' ? '~1-2 min' : (d.speed || '—') };
-}
-
 async function quoteDebridge(amount) {
   const amt = Math.round(amount * 1e6);
   const url = `https://api.dln.trade/v1.0/dln/order/create-tx?srcChainId=100000026&srcChainTokenIn=${USDT_TRON}&srcChainTokenInAmount=${amt}&dstChainId=7565164&dstChainTokenOut=${USDC_SOL}`;
@@ -576,7 +567,6 @@ function normalizarError(err) {
 }
 
 const PROVIDER_URLS = {
-  'Rhino.fi': 'https://rhino.fi',
   'deBridge': 'https://debridge.com',
   'LI.FI': 'https://li.fi',
   'Symbiosis': 'https://symbiosis.finance',
@@ -625,7 +615,6 @@ btnCotizar.addEventListener('click', async () => {
   providerRowsEl.innerHTML = '';
 
   const proveedores = [
-    { nombre: 'Rhino.fi', fn: quoteRhino },
     { nombre: 'deBridge', fn: quoteDebridge },
     { nombre: 'LI.FI', fn: quoteLifi },
     { nombre: 'Symbiosis', fn: quoteSymbiosis }
