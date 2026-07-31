@@ -175,6 +175,52 @@
   .best-quote-box .provider { font-size: 16px; font-weight: 600; }
   .best-quote-box .amount { font-size: 24px; font-weight: 700; color: var(--green); }
   .best-quote-box .savings { font-size: 13px; color: var(--green); margin-top: 6px; }
+  .addr-row { display: flex; gap: 8px; }
+  .addr-row input { flex: 1; min-width: 0; }
+  .addr-btn {
+    width: auto;
+    white-space: nowrap;
+    background: #1f2733;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .addr-btn.paste { color: var(--accent); }
+  .addr-btn.delete { color: var(--red); }
+  .addr-btn:hover { filter: brightness(1.2); }
+  .deposito-result {
+    margin-top: 12px;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    display: none;
+  }
+  .deposito-result .label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .deposit-addr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .deposit-addr-row span { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deposito-result .figures { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .deposito-warning {
+    margin-top: 14px;
+    background: rgba(248,81,73,0.1);
+    border: 1px solid rgba(248,81,73,0.3);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    color: var(--red);
+  }
 </style>
 </head>
 <body>
@@ -243,6 +289,47 @@
         <span class="amount" id="bestAmount">—</span>
       </div>
       <div class="savings" id="bestSavings"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>4. Generar depósito real (NEAR Intents)</h2>
+    <div class="desc">Sin conectar wallet: mandás los USDT como una transferencia común a la dirección que te damos acá</div>
+
+    <label>Tu dirección Solflare (Solana) — destino</label>
+    <div class="addr-row">
+      <input type="text" id="solflareAddr" placeholder="Pegá tu dirección de Solana...">
+      <button type="button" class="addr-btn paste" id="btnPasteSolflare">Pegar</button>
+      <button type="button" class="addr-btn delete" id="btnDeleteSolflare">Borrar</button>
+    </div>
+
+    <label style="margin-top:14px;">Tu dirección Trust (TRON) — reembolso</label>
+    <div class="addr-row">
+      <input type="text" id="trustAddr" placeholder="Pegá tu dirección de Tron...">
+      <button type="button" class="addr-btn paste" id="btnPasteTrust">Pegar</button>
+      <button type="button" class="addr-btn delete" id="btnDeleteTrust">Borrar</button>
+    </div>
+
+    <button id="btnGenerarDeposito" style="margin-top:14px;">Generar dirección de depósito</button>
+    <div class="status" id="depositoStatus"></div>
+
+    <div class="deposito-result" id="depositoResult" style="display:none;">
+      <div class="label">Dirección de depósito (red TRON)</div>
+      <div class="deposit-addr-row">
+        <span id="depositAddr"></span>
+        <button type="button" class="addr-btn paste" id="btnCopyDeposit">Copiar</button>
+      </div>
+      <div class="figures" style="margin-top:10px;">
+        <span>Vas a recibir aprox.</span>
+        <span id="depositAmount" style="color:var(--green); font-weight:600;"></span>
+      </div>
+      <div class="figures">
+        <span>Vence</span>
+        <span id="depositDeadline"></span>
+      </div>
+      <div class="deposito-warning">
+        Esta dirección es de un solo uso, exclusiva para este monto en red TRON. No la reutilices ni mandes otro monto ni otra red.
+      </div>
     </div>
   </div>
 
@@ -670,6 +757,132 @@ btnCotizar.addEventListener('click', async () => {
   }
 
   btnCotizar.disabled = false;
+});
+
+// ===================== CARD 4: Generar deposito real (NEAR Intents) =====================
+const solflareAddrInput = document.getElementById('solflareAddr');
+const trustAddrInput = document.getElementById('trustAddr');
+const btnPasteSolflare = document.getElementById('btnPasteSolflare');
+const btnDeleteSolflare = document.getElementById('btnDeleteSolflare');
+const btnPasteTrust = document.getElementById('btnPasteTrust');
+const btnDeleteTrust = document.getElementById('btnDeleteTrust');
+const btnGenerarDeposito = document.getElementById('btnGenerarDeposito');
+const depositoStatus = document.getElementById('depositoStatus');
+const depositoResult = document.getElementById('depositoResult');
+const depositAddrEl = document.getElementById('depositAddr');
+const depositAmountEl = document.getElementById('depositAmount');
+const depositDeadlineEl = document.getElementById('depositDeadline');
+const btnCopyDeposit = document.getElementById('btnCopyDeposit');
+
+async function loadDireccionesGuardadas() {
+  try {
+    const saved = await window.storage.get('card4_addrs');
+    if (saved && saved.value) {
+      const data = JSON.parse(saved.value);
+      if (data.solflare) solflareAddrInput.value = data.solflare;
+      if (data.trust) trustAddrInput.value = data.trust;
+    }
+  } catch (e) { /* primera vez, sin datos guardados */ }
+}
+loadDireccionesGuardadas();
+
+async function guardarDirecciones() {
+  try {
+    await window.storage.set('card4_addrs', JSON.stringify({
+      solflare: solflareAddrInput.value.trim(),
+      trust: trustAddrInput.value.trim()
+    }));
+  } catch (e) { console.error('No se pudo guardar', e); }
+}
+
+btnPasteSolflare.addEventListener('click', async () => {
+  try {
+    solflareAddrInput.value = (await navigator.clipboard.readText()).trim();
+    guardarDirecciones();
+  } catch (e) {
+    depositoStatus.innerHTML = '<span class="error">No se pudo leer el portapapeles.</span>';
+  }
+});
+btnDeleteSolflare.addEventListener('click', () => { solflareAddrInput.value = ''; guardarDirecciones(); });
+
+btnPasteTrust.addEventListener('click', async () => {
+  try {
+    trustAddrInput.value = (await navigator.clipboard.readText()).trim();
+    guardarDirecciones();
+  } catch (e) {
+    depositoStatus.innerHTML = '<span class="error">No se pudo leer el portapapeles.</span>';
+  }
+});
+btnDeleteTrust.addEventListener('click', () => { trustAddrInput.value = ''; guardarDirecciones(); });
+
+btnCopyDeposit.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(depositAddrEl.textContent);
+    btnCopyDeposit.textContent = 'Copiado';
+    setTimeout(() => { btnCopyDeposit.textContent = 'Copiar'; }, 1500);
+  } catch (e) { /* clipboard no disponible */ }
+});
+
+btnGenerarDeposito.addEventListener('click', async () => {
+  const monto = parseFloat(montoUsdtInput.value);
+  const solflare = solflareAddrInput.value.trim();
+  const trust = trustAddrInput.value.trim();
+
+  if (!monto || monto <= 0) {
+    depositoStatus.innerHTML = '<span class="error">Ingrese un monto válido en la Card 3.</span>';
+    return;
+  }
+  if (!solflare) {
+    depositoStatus.innerHTML = '<span class="error">Ingrese su dirección de Solflare.</span>';
+    return;
+  }
+  if (!trust) {
+    depositoStatus.innerHTML = '<span class="error">Ingrese su dirección de Trust (Tron).</span>';
+    return;
+  }
+
+  await guardarDirecciones();
+  btnGenerarDeposito.disabled = true;
+  depositoStatus.textContent = 'Generando dirección de depósito...';
+  depositoResult.style.display = 'none';
+
+  try {
+    const amt = Math.round(monto * 1e6);
+    const deadline = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const body = {
+      dry: false,
+      swapType: 'EXACT_INPUT',
+      originAsset: NEAR_ORIGIN_ASSET,
+      destinationAsset: NEAR_DEST_ASSET,
+      amount: String(amt),
+      slippageTolerance: 100,
+      deadline,
+      depositType: 'ORIGIN_CHAIN',
+      recipient: solflare,
+      recipientType: 'DESTINATION_CHAIN',
+      refundTo: trust,
+      refundType: 'ORIGIN_CHAIN'
+    };
+    const resp = await fetch('https://1click.chaindefuser.com/v0/quote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await resp.json();
+    if (!resp.ok || !d.quote || !d.quote.depositAddress) throw new Error(normalizarError({ message: d.message || ('HTTP ' + resp.status) }));
+
+    depositAddrEl.textContent = d.quote.depositAddress;
+    depositAmountEl.textContent = (parseFloat(d.quote.amountOut) / 1e6).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDC';
+    const venc = new Date(d.quote.deadline);
+    depositDeadlineEl.textContent = venc.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+    depositoResult.style.display = 'block';
+    depositoStatus.textContent = 'Listo — revisá que las direcciones de arriba sean las tuyas antes de mandar los fondos.';
+  } catch (err) {
+    depositoStatus.innerHTML = `<span class="error">Error: ${err.message || 'API no disponible'}</span>`;
+  }
+
+  btnGenerarDeposito.disabled = false;
 });
 </script>
 </body>
