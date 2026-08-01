@@ -326,6 +326,10 @@
       <label>Monto USDT en TRON</label>
       <input type="number" id="montoUsdt" value="1000" step="100">
     </div>
+    <div class="field" style="margin-top:14px;">
+      <label>Tolerancia (%, de 0 a 1)</label>
+      <input type="number" id="toleranciaCard3" value="0.5" min="0" max="1" step="0.05">
+    </div>
     <button id="btnCotizar" style="margin-top:10px;">Consultar cotizaciones</button>
     <div class="status" id="cotizarStatus"></div>
     <div id="providerRows" style="margin-top:12px;"></div>
@@ -378,6 +382,12 @@
     <div class="field" style="margin-top:14px;">
       <label>Vigencia del depósito (minutos, 1 a 60)</label>
       <input type="number" id="vigenciaMin" value="5" min="1" max="60" step="1">
+    </div>
+
+    <div class="field" style="margin-top:14px;">
+      <label>Tolerancia (%, de 0 a 1)</label>
+      <input type="number" id="toleranciaCard4" value="0.5" min="0" max="1" step="0.05">
+      <div class="deposito-monto-note">Cuánto menos del estimado aceptás recibir. Con 0 te garantizan el número exacto, pero si el precio se mueve la operación se cancela y te devuelven los fondos.</div>
     </div>
 
     <button id="btnGenerarDeposito" style="margin-top:14px;">Generar dirección de depósito</button>
@@ -714,6 +724,14 @@ let redCard4 = 'SOL', tokenCard4 = 'USDC';
 activarSelectorDestino('tokenSelectCard4', 'networkSelectCard4', 'comboNotaCard4',
   (red, token) => { redCard4 = red; tokenCard4 = token; });
 
+// La tolerancia se escribe en % (0 a 1) y la API la espera en centesimas de punto
+// porcentual: 1% = 100. Se acota al rango para no mandar cualquier cosa.
+function leerTolerancia(inputId) {
+  const pct = parseFloat(document.getElementById(inputId).value);
+  const seguro = isNaN(pct) ? 0.5 : Math.min(1, Math.max(0, pct));
+  return Math.round(seguro * 100);
+}
+
 async function quoteNearIntents(amount, red, token) {
   const dest = destinoDe(red, token);
   if (!dest) throw new Error('Combinación no disponible');
@@ -725,7 +743,7 @@ async function quoteNearIntents(amount, red, token) {
     originAsset: NEAR_ORIGIN_ASSET,
     destinationAsset: dest.nearAsset,
     amount: String(amt),
-    slippageTolerance: 100,
+    slippageTolerance: leerTolerancia('toleranciaCard3'),
     deadline,
     depositType: 'ORIGIN_CHAIN',
     recipient: dest.dummy,
@@ -741,8 +759,9 @@ async function quoteNearIntents(amount, red, token) {
   const d = await resp.json();
   if (!resp.ok || !d.quote) throw new Error(d.message || ('HTTP ' + resp.status));
   const neto = parseFloat(d.quote.amountOut) / 1e6;
+  const minimo = parseFloat(d.quote.minAmountOut) / 1e6;
   const seg = d.quote.timeEstimate;
-  return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
+  return { neto, minimo, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
 // Ruta por Bitget: depositar USDT-TRON, y si el destino es USDC convertirlo en el
@@ -831,7 +850,7 @@ btnCotizar.addEventListener('click', async () => {
 
   const [near, bitget] = await Promise.all([
     quoteNearIntents(monto, red, token)
-      .then(r => ({ nombre: 'NEAR Intents', monto, token, neto: r.neto, tiempo: r.tiempo }))
+      .then(r => ({ nombre: 'NEAR Intents', monto, token, neto: r.neto, minimo: r.minimo, tiempo: r.tiempo }))
       .catch(err => ({ nombre: 'NEAR Intents', error: normalizarError(err) })),
     quoteBitget(monto, red, token)
       .then(r => ({ nombre: 'Bitget', monto, token, neto: r.neto, detalle: r.detalle }))
@@ -847,9 +866,13 @@ btnCotizar.addEventListener('click', async () => {
   if (!near.error) {
     bestProviderEl.textContent = near.nombre;
     bestAmountEl.textContent = near.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + token;
-    bestSavingsEl.textContent = bitget.error
+    const piso = typeof near.minimo === 'number'
+      ? `Mínimo garantizado: ${near.minimo.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} ${token}`
+      : '';
+    const vsBitget = bitget.error
       ? ''
       : `Diferencia frente a Bitget (referencia): ${near.neto >= bitget.neto ? '+' : ''}${(near.neto - bitget.neto).toFixed(2)} ${token}`;
+    bestSavingsEl.textContent = [piso, vsBitget].filter(Boolean).join('  ·  ');
     bestQuoteBox.style.display = 'block';
     cotizarStatus.textContent = `Listo — ${token} en ${NOMBRE_RED[red]}.`;
   } else {
@@ -972,7 +995,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
       originAsset: NEAR_ORIGIN_ASSET,
       destinationAsset: destino.nearAsset,
       amount: String(amt),
-      slippageTolerance: 100,
+      slippageTolerance: leerTolerancia('toleranciaCard4'),
       deadline,
       depositType: 'ORIGIN_CHAIN',
       recipient: solflare,
