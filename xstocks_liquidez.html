@@ -394,6 +394,14 @@
         <span id="depositAmount" style="color:var(--green); font-weight:600;"></span>
       </div>
       <div class="figures">
+        <span>Mínimo garantizado</span>
+        <span id="depositMinimo" style="font-weight:600;"></span>
+      </div>
+      <div class="figures">
+        <span>Enviás a esta dirección tuya</span>
+        <span id="depositRecipiente" style="font-size:12px; word-break:break-all;"></span>
+      </div>
+      <div class="figures">
         <span>Vence</span>
         <span id="depositDeadline"></span>
       </div>
@@ -657,6 +665,8 @@ const DESTINOS = {
     nearAsset: 'nep245:v2_1.omni.hot.tg:137_3hpYoaLtt8MP1Z2GH1U473DMRKgr' }
 };
 const NOMBRE_RED = { SOL: 'Solana', ARB: 'Arbitrum', POL: 'Polygon' };
+// Direccion TRON: empieza con T y tiene 34 caracteres base58 (sin 0, O, I ni l).
+const FORMATO_TRON = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 function destinoDe(red, token) { return DESTINOS[red + '/' + token] || null; }
 
@@ -859,6 +869,8 @@ const depositoStatus = document.getElementById('depositoStatus');
 const depositoResult = document.getElementById('depositoResult');
 const depositAddrEl = document.getElementById('depositAddr');
 const depositAmountEl = document.getElementById('depositAmount');
+const depositMinimoEl = document.getElementById('depositMinimo');
+const depositRecipienteEl = document.getElementById('depositRecipiente');
 const depositDeadlineEl = document.getElementById('depositDeadline');
 const btnCopyDeposit = document.getElementById('btnCopyDeposit');
 const depositoMontoInput = document.getElementById('depositoMonto');
@@ -973,7 +985,35 @@ btnGenerarDeposito.addEventListener('click', async () => {
     const d = await resp.json();
     if (!resp.ok || !d.quote || !d.quote.depositAddress) throw new Error(normalizarError({ message: d.message || ('HTTP ' + resp.status) }));
 
+    // Antes de mostrar una direccion a la que el usuario va a mandar plata, se
+    // comprueba que la respuesta sea la que pedimos. La API devuelve en
+    // quoteRequest un eco del pedido; si algo no coincide, no se muestra nada.
+    const eco = d.quoteRequest || {};
+    const problemas = [];
+    if (!FORMATO_TRON.test(d.quote.depositAddress)) {
+      problemas.push('la dirección de depósito no tiene formato de dirección TRON');
+    }
+    if (eco.recipient !== solflare) {
+      problemas.push('la dirección de destino que devolvió NEAR no es la que ingresaste');
+    }
+    if (eco.destinationAsset !== destino.nearAsset) {
+      problemas.push(`el destino que devolvió NEAR no es ${tokenCard4} en ${NOMBRE_RED[redCard4]}`);
+    }
+    if (eco.refundTo !== trust) {
+      problemas.push('la dirección de reembolso que devolvió NEAR no es la que ingresaste');
+    }
+    if (String(eco.amount) !== String(amt)) {
+      problemas.push('el monto que devolvió NEAR no es el que pediste');
+    }
+    if (problemas.length) {
+      depositoStatus.innerHTML = `<span class="error">NO ENVÍES NADA. La respuesta no coincide con lo que pediste: ${esc(problemas.join('; '))}. Volvé a intentar; si se repite, no uses esta dirección.</span>`;
+      btnGenerarDeposito.disabled = false;
+      return;
+    }
+
     depositAddrEl.textContent = d.quote.depositAddress;
+    depositMinimoEl.textContent = (parseFloat(d.quote.minAmountOut) / 1e6).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + tokenCard4;
+    depositRecipienteEl.textContent = eco.recipient;
     depositAmountEl.textContent = (parseFloat(d.quote.amountOut) / 1e6).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + tokenCard4 + ' en ' + NOMBRE_RED[redCard4];
     const venc = new Date(d.quote.deadline);
     depositDeadlineEl.textContent = venc.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
