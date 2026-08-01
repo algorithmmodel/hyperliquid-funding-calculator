@@ -250,15 +250,18 @@
     cursor: pointer;
   }
   .network-btn.active { color: var(--text); border-color: var(--accent); background: #132320; }
+  .network-btn:disabled { opacity: 0.35; cursor: not-allowed; text-decoration: line-through; }
   .network-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .network-dot.sol { background: #9945FF; }
   .network-dot.arb { background: #28A0F0; }
+  .network-dot.pol { background: #8247E5; }
+  .combo-nota { font-size: 12px; color: var(--muted); margin: -6px 0 14px; min-height: 16px; }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>xStocks — Consulta . Liquidez . Cambio Defi.</h1>
-  <div class="subtitle">Buscador (Jupiter) + Liquidez (CoinGecko) + Comparador USDT (TRON) → USDC (Solana) entre DeFi y Bitget</div>
+  <div class="subtitle">Buscador y liquidez real (Jupiter) + Conversión USDT (TRON) → USDC o USDT en Solana, Arbitrum o Polygon vía NEAR Intents, con Bitget de referencia</div>
 
   <div class="panel">
     <h2>1. Consultar un ticker específico</h2>
@@ -285,7 +288,7 @@
 
   <div class="panel">
     <h2>2. xStocks — listado por liquidez real (Jupiter)</h2>
-    <div class="desc">Lista de tickers vía categoría de CoinGecko + liquidez real del pool de Solana consultada en Jupiter (el mismo dato que usa la Card 1)</div>
+    <div class="desc">Lista de xStocks verificados con liquidez real del pool de Solana consultada en Jupiter (el mismo dato que usa la Card 1)</div>
     <div class="row" style="align-items:flex-end; margin-bottom:10px;">
       <div class="field" style="max-width:220px;">
         <label>Piso de liquidez (en USD, ej. 500000)</label>
@@ -305,13 +308,20 @@
   </div>
 
   <div class="panel">
-    <h2>3. Conversión USDT (TRON) → USDC</h2>
-    <div class="desc">Compara proveedores DeFi cross-chain (solo lectura, sin conectar wallet ni ejecutar nada) y Bitget como referencia centralizada</div>
+    <h2>3. Conversión desde USDT (TRON)</h2>
+    <div class="desc">Cotiza NEAR Intents (solo lectura, sin conectar wallet ni ejecutar nada) y Bitget como referencia centralizada</div>
+    <label>Token de destino</label>
+    <div class="network-select" id="tokenSelectCard3">
+      <button type="button" class="network-btn active" data-token="USDC">USDC</button>
+      <button type="button" class="network-btn" data-token="USDT">USDT</button>
+    </div>
     <label>Red de destino</label>
     <div class="network-select" id="networkSelectCard3">
       <button type="button" class="network-btn active" data-network="SOL"><span class="network-dot sol"></span>SOL</button>
       <button type="button" class="network-btn" data-network="ARB"><span class="network-dot arb"></span>ARB</button>
+      <button type="button" class="network-btn" data-network="POL"><span class="network-dot pol"></span>POL</button>
     </div>
+    <div class="combo-nota" id="comboNotaCard3"></div>
     <div class="field">
       <label>Monto USDT en TRON</label>
       <input type="number" id="montoUsdt" value="1000" step="100">
@@ -333,11 +343,18 @@
     <h2>4. Generar depósito real (NEAR Intents)</h2>
     <div class="desc">Sin conectar wallet: mandás los USDT como una transferencia común a la dirección que te damos acá</div>
 
+    <label>Token de destino</label>
+    <div class="network-select" id="tokenSelectCard4">
+      <button type="button" class="network-btn active" data-token="USDC">USDC</button>
+      <button type="button" class="network-btn" data-token="USDT">USDT</button>
+    </div>
     <label>Red de destino</label>
     <div class="network-select" id="networkSelectCard4">
       <button type="button" class="network-btn active" data-network="SOL"><span class="network-dot sol"></span>SOL</button>
       <button type="button" class="network-btn" data-network="ARB"><span class="network-dot arb"></span>ARB</button>
+      <button type="button" class="network-btn" data-network="POL"><span class="network-dot pol"></span>POL</button>
     </div>
+    <div class="combo-nota" id="comboNotaCard4"></div>
 
     <div class="deposito-monto">
       Depósito USDT: <input type="number" id="depositoMonto" class="deposito-monto-input" step="100">
@@ -546,76 +563,33 @@ const listTable = document.getElementById('listTable');
 const listTbody = document.getElementById('listTbody');
 const pisoVolumenInput = document.getElementById('pisoVolumen');
 
-function chunkArray(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
 btnListado.addEventListener('click', async () => {
   btnListado.disabled = true;
   listTable.style.display = 'none';
   listTbody.innerHTML = '';
 
   try {
-    // Paso 1: lista de xStocks (símbolo, nombre, id, market cap) desde la categoría de CoinGecko
-    listStatus.textContent = 'Paso 1/3: trayendo lista de xStocks desde CoinGecko...';
-    const catResp = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=xstocks-ecosystem&order=market_cap_desc&per_page=250&page=1&sparkline=false');
-    if (!catResp.ok) throw new Error('HTTP ' + catResp.status + ' al traer la categoría');
-    const catData = await catResp.json();
-    if (!Array.isArray(catData)) throw new Error('Respuesta inesperada de CoinGecko (categoría)');
+    // Una sola consulta a Jupiter: devuelve los xStocks verificados ya con precio,
+    // liquidez real del pool y market cap. Antes esto se armaba con CoinGecko
+    // (categoria + lista completa de plataformas = 2,7 MB por consulta), que en
+    // el celular se cortaba. Verificado el 1-ago-2026 contra los 104 xStocks de
+    // CoinGecko: con cualquier piso desde $50.000 para arriba el resultado es el
+    // mismo; los unicos que quedan fuera son PLTRX (~$21K) y MCDX (~$14K).
+    listStatus.textContent = 'Consultando xStocks con liquidez real en Jupiter...';
+    const resp = await fetch('https://lite-api.jup.ag/tokens/v2/search?query=xStock');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!Array.isArray(data)) throw new Error('Respuesta inesperada de Jupiter');
 
-    // Paso 2: direcciones en Solana para cada id (una sola llamada masiva a la lista completa con plataformas)
-    listStatus.textContent = `Paso 2/3: resolviendo direcciones en Solana para ${catData.length} tokens...`;
-    const platResp = await fetch('https://api.coingecko.com/api/v3/coins/list?include_platform=true');
-    if (!platResp.ok) throw new Error('HTTP ' + platResp.status + ' al traer plataformas');
-    const platData = await platResp.json();
-    const platMap = {};
-    if (Array.isArray(platData)) {
-      platData.forEach(p => { platMap[p.id] = p.platforms || {}; });
-    }
-
-    const conDireccion = catData
-      .map(c => ({
-        symbol: c.symbol, name: c.name, id: c.id,
-        price: c.current_price, mcap: c.market_cap,
-        solanaAddr: (platMap[c.id] && platMap[c.id].solana) ? platMap[c.id].solana : null
-      }))
-      .filter(c => c.solanaAddr);
-
-    if (conDireccion.length === 0) {
-      listStatus.innerHTML = '<span class="error">Ningún token de la categoría tiene dirección de Solana resuelta.</span>';
-      btnListado.disabled = false;
-      return;
-    }
-
-    // Paso 3: liquidez real vía Jupiter Price API v3, en lotes
-    listStatus.textContent = `Paso 3/3: consultando liquidez real en Jupiter para ${conDireccion.length} tokens...`;
-    const lotes = chunkArray(conDireccion, 30);
-    const liquidezMap = {};
-    for (const lote of lotes) {
-      const ids = lote.map(t => t.solanaAddr).join(',');
-      try {
-        const priceResp = await fetch(`https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(ids)}`);
-        if (priceResp.ok) {
-          const priceJson = await priceResp.json();
-          Object.keys(priceJson).forEach(addr => {
-            liquidezMap[addr] = priceJson[addr];
-          });
-        }
-      } catch (e) { /* si un lote falla, seguimos con los demás */ }
-    }
-
-    const conLiquidez = conDireccion
-      .map(t => {
-        const info = liquidezMap[t.solanaAddr];
-        return {
-          ...t,
-          jupPrice: info ? info.usdPrice : null,
-          liquidity: info && typeof info.liquidity === 'number' ? info.liquidity : null
-        };
-      })
-      .filter(t => t.liquidity !== null);
+    const conLiquidez = data
+      .filter(t => t.isVerified && typeof t.liquidity === 'number' && t.liquidity > 0)
+      .map(t => ({
+        symbol: t.symbol,
+        name: t.name,
+        jupPrice: t.usdPrice,
+        liquidity: t.liquidity,
+        mcap: t.mcap
+      }));
 
     const piso = parseFloat(pisoVolumenInput.value);
     const pisoFinal = isNaN(piso) ? 500000 : piso;
@@ -623,13 +597,13 @@ btnListado.addEventListener('click', async () => {
     filtrados.sort((a, b) => b.liquidity - a.liquidity);
 
     if (filtrados.length === 0) {
-      listStatus.textContent = `Ningún xStock con dirección en Solana supera $${pisoFinal.toLocaleString('en-US')} de liquidez real (de ${conLiquidez.length} con datos de Jupiter, ${conDireccion.length} con dirección Solana, ${catData.length} totales en la categoría).`;
+      listStatus.textContent = `Ningún xStock supera $${pisoFinal.toLocaleString('en-US')} de liquidez real (de ${conLiquidez.length} con datos de Jupiter).`;
       btnListado.disabled = false;
       return;
     }
 
     listTbody.innerHTML = filtrados.map(t => {
-      const precio = Number(t.jupPrice ?? t.price ?? 0);
+      const precio = Number(t.jupPrice ?? 0);
       return `
       <tr>
         <td>${esc(String(t.symbol || '').toUpperCase())}</td>
@@ -640,7 +614,7 @@ btnListado.addEventListener('click', async () => {
     `;
     }).join('');
     listTable.style.display = 'table';
-    listStatus.textContent = `${filtrados.length} xStock(s) con liquidez real > $${pisoFinal.toLocaleString('en-US')} (de ${catData.length} totales en la categoría).`;
+    listStatus.textContent = `${filtrados.length} xStock(s) con liquidez real > $${pisoFinal.toLocaleString('en-US')} (de ${conLiquidez.length} consultados en Jupiter).`;
   } catch (err) {
     listStatus.innerHTML = `<span class="error">Error: ${esc(err.message)}. Posible bloqueo CORS o rate limit.</span>`;
   }
@@ -662,95 +636,89 @@ const NEAR_ORIGIN_ASSET = 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.
 const DUMMY_TRON_ADDR = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE';
 const BITGET_TAKER_FEE = 0.001; // fee taker estandar de Bitget spot, sin descuento por BGB
 
-// Configuracion por red de destino: cada proveedor necesita su propio formato de chain/token
-const NETWORKS = {
-  SOL: {
-    usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    dummyAddr: 'So11111111111111111111111111111111111111112',
-    debridgeChainId: 7565164,
-    lifiChainId: 1151111081099710,
-    chainflipChain: 'Solana',
-    nearAsset: 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near',
-    bitgetChain: 'SOL'
-  },
-  ARB: {
-    usdc: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
-    dummyAddr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
-    debridgeChainId: 42161,
-    lifiChainId: 42161,
-    chainflipChain: 'Arbitrum',
-    nearAsset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near',
-    bitgetChain: 'ArbitrumOne'
-  }
+const SOL_DUMMY = 'So11111111111111111111111111111111111111112';
+const EVM_DUMMY = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+
+// Combinaciones token+red verificadas el 1-ago-2026 pidiendo una cotizacion real a
+// NEAR Intents y consultando las redes de retiro de Bitget. ARB+USDT no figura
+// porque NEAR Intents no lo tiene en su catalogo de 176 tokens.
+// Ojo: Bitget nombra la red de Polygon distinto segun la moneda ('POLYGON' para
+// USDC, 'Polygon' para USDT). No unificar sin volver a consultar su API.
+const DESTINOS = {
+  'SOL/USDC': { red: 'SOL', token: 'USDC', dummy: SOL_DUMMY, bitgetChain: 'SOL',
+    nearAsset: 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near' },
+  'SOL/USDT': { red: 'SOL', token: 'USDT', dummy: SOL_DUMMY, bitgetChain: 'SOL',
+    nearAsset: 'nep141:sol-c800a4bd850783ccb82c2b2c7e84175443606352.omft.near' },
+  'ARB/USDC': { red: 'ARB', token: 'USDC', dummy: EVM_DUMMY, bitgetChain: 'ArbitrumOne',
+    nearAsset: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near' },
+  'POL/USDC': { red: 'POL', token: 'USDC', dummy: EVM_DUMMY, bitgetChain: 'POLYGON',
+    nearAsset: 'nep245:v2_1.omni.hot.tg:137_qiStmoQJDQPTebaPjgx5VBxZv6L' },
+  'POL/USDT': { red: 'POL', token: 'USDT', dummy: EVM_DUMMY, bitgetChain: 'Polygon',
+    nearAsset: 'nep245:v2_1.omni.hot.tg:137_3hpYoaLtt8MP1Z2GH1U473DMRKgr' }
 };
+const NOMBRE_RED = { SOL: 'Solana', ARB: 'Arbitrum', POL: 'Polygon' };
 
-function activarSelectorRed(containerId, onChange) {
-  const container = document.getElementById(containerId);
-  let seleccionada = 'SOL';
-  container.querySelectorAll('.network-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      seleccionada = btn.dataset.network;
-      container.querySelectorAll('.network-btn').forEach(b => b.classList.toggle('active', b === btn));
-      if (onChange) onChange(seleccionada);
+function destinoDe(red, token) { return DESTINOS[red + '/' + token] || null; }
+
+// Selector combinado de token + red. Cuando una combinacion no existe, deshabilita
+// el boton del token y explica por que, en vez de fallar al consultar.
+function activarSelectorDestino(tokenId, redId, notaId, onChange) {
+  const cToken = document.getElementById(tokenId);
+  const cRed   = document.getElementById(redId);
+  const nota   = document.getElementById(notaId);
+  let token = 'USDC', red = 'SOL';
+
+  function refrescar() {
+    cToken.querySelectorAll('.network-btn').forEach(b => {
+      const disponible = !!destinoDe(red, b.dataset.token);
+      b.disabled = !disponible;
+      b.classList.toggle('active', b.dataset.token === token);
     });
-  });
-  return { get: () => seleccionada };
-}
-let redCard3 = 'SOL';
-const selectorCard3 = activarSelectorRed('networkSelectCard3', (red) => { redCard3 = red; });
-let redCard4 = 'SOL';
-const selectorCard4 = activarSelectorRed('networkSelectCard4', (red) => { redCard4 = red; });
+    cRed.querySelectorAll('.network-btn').forEach(b => b.classList.toggle('active', b.dataset.network === red));
+    const faltantes = ['USDC','USDT'].filter(t => !destinoDe(red, t));
+    nota.textContent = faltantes.length
+      ? `${faltantes.join(' y ')} no está disponible en ${NOMBRE_RED[red]} a través de NEAR Intents.`
+      : '';
+    if (onChange) onChange(red, token);
+  }
 
-async function quoteDebridge(amount, network) {
-  const net = NETWORKS[network];
-  const amt = Math.round(amount * 1e6);
-  const url = `https://api.dln.trade/v1.0/dln/order/create-tx?srcChainId=100000026&srcChainTokenIn=${USDT_TRON}&srcChainTokenInAmount=${amt}&dstChainId=${net.debridgeChainId}&dstChainTokenOut=${net.usdc}`;
-  const resp = await fetch(url);
-  const d = await resp.json();
-  if (!resp.ok || !d.estimation) throw new Error(d.errorMessage || ('HTTP ' + resp.status));
-  const neto = parseFloat(d.estimation.dstChainTokenOut.amount) / 1e6;
-  const min = d.order && d.order.approximateFulfillmentDelay;
-  return { neto, tiempo: min ? `~${min} min` : '—' };
-}
+  cToken.querySelectorAll('.network-btn').forEach(b => b.addEventListener('click', () => {
+    if (b.disabled) return;
+    token = b.dataset.token; refrescar();
+  }));
+  cRed.querySelectorAll('.network-btn').forEach(b => b.addEventListener('click', () => {
+    red = b.dataset.network;
+    // si el token elegido no existe en la red nueva, pasamos al que si exista
+    if (!destinoDe(red, token)) token = ['USDC','USDT'].find(t => destinoDe(red, t)) || token;
+    refrescar();
+  }));
 
-async function quoteLifi(amount, network) {
-  const net = NETWORKS[network];
-  const amt = Math.round(amount * 1e6);
-  const url = `https://li.quest/v1/quote?fromChain=728126428&toChain=${net.lifiChainId}&fromToken=${USDT_TRON}&toToken=${net.usdc}&fromAmount=${amt}&fromAddress=${DUMMY_TRON_ADDR}&toAddress=${net.dummyAddr}`;
-  const resp = await fetch(url);
-  const d = await resp.json();
-  if (!resp.ok || !d.estimate) throw new Error(d.message || ('HTTP ' + resp.status));
-  const neto = parseFloat(d.estimate.toAmount) / 1e6;
-  const seg = d.estimate.executionDuration;
-  return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
+  refrescar();
+  return { get: () => ({ red, token }) };
 }
 
-async function quoteChainflip(amount, network) {
-  const net = NETWORKS[network];
-  const amt = Math.round(amount * 1e6);
-  const url = `https://chainflip-swap.chainflip.io/v2/quote?srcChain=Tron&srcAsset=USDT&destChain=${net.chainflipChain}&destAsset=USDC&amount=${amt}&brokerCommissionBps=0&dcaEnabled=false`;
-  const resp = await fetch(url);
-  const d = await resp.json();
-  if (!resp.ok || !Array.isArray(d) || !d[0] || !d[0].egressAmount) throw new Error((d && d.message) || ('HTTP ' + resp.status));
-  const neto = parseFloat(d[0].egressAmount) / 1e6;
-  const seg = d[0].estimatedDurationSeconds;
-  return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
-}
+let redCard3 = 'SOL', tokenCard3 = 'USDC';
+activarSelectorDestino('tokenSelectCard3', 'networkSelectCard3', 'comboNotaCard3',
+  (red, token) => { redCard3 = red; tokenCard3 = token; });
+let redCard4 = 'SOL', tokenCard4 = 'USDC';
+activarSelectorDestino('tokenSelectCard4', 'networkSelectCard4', 'comboNotaCard4',
+  (red, token) => { redCard4 = red; tokenCard4 = token; });
 
-async function quoteNearIntents(amount, network) {
-  const net = NETWORKS[network];
+async function quoteNearIntents(amount, red, token) {
+  const dest = destinoDe(red, token);
+  if (!dest) throw new Error('Combinación no disponible');
   const amt = Math.round(amount * 1e6);
   const deadline = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   const body = {
     dry: true,
     swapType: 'EXACT_INPUT',
     originAsset: NEAR_ORIGIN_ASSET,
-    destinationAsset: net.nearAsset,
+    destinationAsset: dest.nearAsset,
     amount: String(amt),
     slippageTolerance: 100,
     deadline,
     depositType: 'ORIGIN_CHAIN',
-    recipient: net.dummyAddr,
+    recipient: dest.dummy,
     recipientType: 'DESTINATION_CHAIN',
     refundTo: DUMMY_TRON_ADDR,
     refundType: 'ORIGIN_CHAIN'
@@ -767,23 +735,31 @@ async function quoteNearIntents(amount, network) {
   return { neto, tiempo: seg ? `~${Math.round(seg)} seg` : '—' };
 }
 
-async function quoteBitget(amount, network) {
-  const net = NETWORKS[network];
-  const [tickerResp, coinResp] = await Promise.all([
-    fetch('https://api.bitget.com/api/v2/spot/market/tickers?symbol=USDCUSDT'),
-    fetch('https://api.bitget.com/api/v2/spot/public/coins?coin=USDC')
-  ]);
-  if (!tickerResp.ok || !coinResp.ok) throw new Error('HTTP error');
-  const tickerJson = await tickerResp.json();
-  const coinJson = await coinResp.json();
-  const askPrice = parseFloat(tickerJson.data[0].askPr);
-  const chainInfo = (coinJson.data[0].chains || []).find(c => c.chain === net.bitgetChain);
+// Ruta por Bitget: depositar USDT-TRON, y si el destino es USDC convertirlo en el
+// mercado spot antes de retirar. Si el destino es USDT no hay ninguna operacion
+// que hacer, asi que no corresponde cobrar el fee taker: solo el fee de retiro.
+async function quoteBitget(amount, red, token) {
+  const dest = destinoDe(red, token);
+  if (!dest) throw new Error('Combinación no disponible');
+  const pedidos = [fetch(`https://api.bitget.com/api/v2/spot/public/coins?coin=${token}`)];
+  if (token === 'USDC') pedidos.push(fetch('https://api.bitget.com/api/v2/spot/market/tickers?symbol=USDCUSDT'));
+  const resps = await Promise.all(pedidos);
+  if (resps.some(r => !r.ok)) throw new Error('HTTP error');
+  const coinJson = await resps[0].json();
+  const chainInfo = ((coinJson.data && coinJson.data[0] && coinJson.data[0].chains) || [])
+    .find(c => c.chain === dest.bitgetChain);
   if (!chainInfo) throw new Error('Sin dato de retiro para esta red');
   const withdrawFee = parseFloat(chainInfo.withdrawFee);
-  const gross = amount / askPrice;
-  const afterTrade = gross * (1 - BITGET_TAKER_FEE);
-  const neto = afterTrade - withdrawFee;
-  return { neto };
+
+  let bruto = amount;
+  let detalle = 'sin conversión (USDT → USDT)';
+  if (token === 'USDC') {
+    const tickerJson = await resps[1].json();
+    const askPrice = parseFloat(tickerJson.data[0].askPr);
+    bruto = (amount / askPrice) * (1 - BITGET_TAKER_FEE);
+    detalle = 'incluye 0,1% de comisión por operar';
+  }
+  return { neto: bruto - withdrawFee, detalle };
 }
 
 function normalizarError(err) {
@@ -794,9 +770,6 @@ function normalizarError(err) {
 }
 
 const PROVIDER_URLS = {
-  'deBridge': 'https://debridge.com',
-  'LI.FI': 'https://li.fi',
-  'Chainflip': 'https://chainflip.io',
   'NEAR Intents': 'https://near-intents.org',
   'Bitget': 'https://www.bitget.com'
 };
@@ -824,9 +797,9 @@ function renderProviderRow(nombre, resultado, esBitget, esGanador) {
       <span class="badge badge-ok">Disponible</span>
     </div>
     <div class="figures">
-      <span>${esc(resultado.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}))} USDC</span>
+      <span>${esc(resultado.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}))} ${esc(resultado.token || '')}</span>
       <span>-$${esc(costo.toFixed(2))} (${esc(costoPct)}%)</span>
-      <span>${esc(resultado.tiempo || '')}</span>
+      <span>${esc(resultado.tiempo || resultado.detalle || '')}</span>
     </div>
   </div>`;
 }
@@ -837,56 +810,37 @@ btnCotizar.addEventListener('click', async () => {
     cotizarStatus.innerHTML = '<span class="error">Ingrese un monto válido.</span>';
     return;
   }
+  const red = redCard3, token = tokenCard3;
   btnCotizar.disabled = true;
-  cotizarStatus.textContent = 'Consultando proveedores...';
+  cotizarStatus.textContent = `Consultando ${token} en ${NOMBRE_RED[red]}...`;
   bestQuoteBox.style.display = 'none';
   providerRowsEl.innerHTML = '';
 
-  const proveedores = [
-    { nombre: 'deBridge', fn: quoteDebridge },
-    { nombre: 'LI.FI', fn: quoteLifi },
-    { nombre: 'Chainflip', fn: quoteChainflip },
-    { nombre: 'NEAR Intents', fn: quoteNearIntents }
-  ];
+  const [near, bitget] = await Promise.all([
+    quoteNearIntents(monto, red, token)
+      .then(r => ({ nombre: 'NEAR Intents', monto, token, neto: r.neto, tiempo: r.tiempo }))
+      .catch(err => ({ nombre: 'NEAR Intents', error: normalizarError(err) })),
+    quoteBitget(monto, red, token)
+      .then(r => ({ nombre: 'Bitget', monto, token, neto: r.neto, detalle: r.detalle }))
+      .catch(err => ({ nombre: 'Bitget', error: normalizarError(err) }))
+  ]);
 
-  const resultados = await Promise.all(proveedores.map(async p => {
-    try {
-      const r = await p.fn(monto, redCard3);
-      return { nombre: p.nombre, monto, neto: r.neto, tiempo: r.tiempo };
-    } catch (err) {
-      return { nombre: p.nombre, error: normalizarError(err) };
-    }
-  }));
+  // Bitget es solo referencia: un exchange centralizado siempre puede resultar mas
+  // barato, pero exige cuenta, KYC y custodia de terceros. La ruta elegida es
+  // siempre la DeFi; Bitget se muestra al lado nada mas que para dimensionar el costo.
+  providerRowsEl.innerHTML = renderProviderRow('NEAR Intents', near, false, !near.error)
+    + renderProviderRow('Bitget', bitget, true, false);
 
-  let bitgetResult;
-  try {
-    const r = await quoteBitget(monto, redCard3);
-    bitgetResult = { nombre: 'Bitget', monto, neto: r.neto };
-  } catch (err) {
-    bitgetResult = { nombre: 'Bitget', error: normalizarError(err) };
-  }
-
-  const validos = resultados.filter(r => !r.error);
-  validos.sort((a, b) => b.neto - a.neto);
-  const invalidos = resultados.filter(r => r.error);
-
-  providerRowsEl.innerHTML = [...validos, ...invalidos].map((r, i) => renderProviderRow(r.nombre, r, false, i === 0 && validos.length > 0)).join('')
-    + renderProviderRow('Bitget', bitgetResult, true, false);
-
-  if (validos.length > 0) {
-    const mejor = validos[0];
-    bestProviderEl.textContent = mejor.nombre;
-    bestAmountEl.textContent = mejor.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDC';
-    if (!bitgetResult.error) {
-      const ahorro = mejor.neto - bitgetResult.neto;
-      bestSavingsEl.textContent = `Ahorro frente a Bitget: ${ahorro >= 0 ? '+' : ''}${ahorro.toFixed(2)} USDC`;
-    } else {
-      bestSavingsEl.textContent = '';
-    }
+  if (!near.error) {
+    bestProviderEl.textContent = near.nombre;
+    bestAmountEl.textContent = near.neto.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + token;
+    bestSavingsEl.textContent = bitget.error
+      ? ''
+      : `Diferencia frente a Bitget (referencia): ${near.neto >= bitget.neto ? '+' : ''}${(near.neto - bitget.neto).toFixed(2)} ${token}`;
     bestQuoteBox.style.display = 'block';
-    cotizarStatus.textContent = `Listo — ${validos.length} de ${proveedores.length} proveedores DeFi respondieron.`;
+    cotizarStatus.textContent = `Listo — ${token} en ${NOMBRE_RED[red]}.`;
   } else {
-    cotizarStatus.innerHTML = '<span class="error">Ningún proveedor DeFi respondió. Intente de nuevo.</span>';
+    cotizarStatus.innerHTML = '<span class="error">NEAR Intents no respondió. Intente de nuevo.</span>';
   }
 
   btnCotizar.disabled = false;
@@ -987,6 +941,13 @@ btnGenerarDeposito.addEventListener('click', async () => {
   depositoStatus.textContent = 'Generando dirección de depósito...';
   depositoResult.style.display = 'none';
 
+  const destino = destinoDe(redCard4, tokenCard4);
+  if (!destino) {
+    depositoStatus.innerHTML = `<span class="error">${esc(tokenCard4)} no está disponible en ${esc(NOMBRE_RED[redCard4])}.</span>`;
+    btnGenerarDeposito.disabled = false;
+    return;
+  }
+
   try {
     const amt = Math.round(monto * 1e6);
     const deadline = new Date(Date.now() + vigenciaMin * 60 * 1000).toISOString();
@@ -994,7 +955,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
       dry: false,
       swapType: 'EXACT_INPUT',
       originAsset: NEAR_ORIGIN_ASSET,
-      destinationAsset: NETWORKS[redCard4].nearAsset,
+      destinationAsset: destino.nearAsset,
       amount: String(amt),
       slippageTolerance: 100,
       deadline,
@@ -1013,7 +974,7 @@ btnGenerarDeposito.addEventListener('click', async () => {
     if (!resp.ok || !d.quote || !d.quote.depositAddress) throw new Error(normalizarError({ message: d.message || ('HTTP ' + resp.status) }));
 
     depositAddrEl.textContent = d.quote.depositAddress;
-    depositAmountEl.textContent = (parseFloat(d.quote.amountOut) / 1e6).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDC';
+    depositAmountEl.textContent = (parseFloat(d.quote.amountOut) / 1e6).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + tokenCard4 + ' en ' + NOMBRE_RED[redCard4];
     const venc = new Date(d.quote.deadline);
     depositDeadlineEl.textContent = venc.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
