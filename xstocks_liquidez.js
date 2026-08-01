@@ -12,6 +12,28 @@ function esc(v) {
     .replace(/'/g, '&#39;');
 }
 
+// ===================== Utilidad: guardado local =====================
+// window.storage solo existe en algunos entornos de previsualizacion; en un
+// navegador normal no existe, y sin este respaldo la Card 4 decia guardar las
+// direcciones y en realidad no guardaba nada.
+const almacen = {
+  async get(clave) {
+    try {
+      if (window.storage && window.storage.get) {
+        const r = await window.storage.get(clave);
+        if (r && r.value) return r.value;
+      }
+    } catch (e) { /* sin entorno: seguimos con localStorage */ }
+    try { return localStorage.getItem(clave); } catch (e) { return null; }
+  },
+  async set(clave, valor) {
+    try {
+      if (window.storage && window.storage.set) { await window.storage.set(clave, valor); return; }
+    } catch (e) { /* sin entorno: seguimos con localStorage */ }
+    try { localStorage.setItem(clave, valor); } catch (e) { /* navegacion privada */ }
+  }
+};
+
 // ===================== CARD 1: Búsqueda individual vía Jupiter =====================
 const tickerSearch = document.getElementById('tickerSearch');
 const suggestionsEl = document.getElementById('suggestions');
@@ -497,9 +519,9 @@ depositoMontoInput.value = montoUsdtInput.value;
 
 async function loadDireccionesGuardadas() {
   try {
-    const saved = await window.storage.get('card4_addrs');
-    if (saved && saved.value) {
-      const data = JSON.parse(saved.value);
+    const raw = await almacen.get('card4_addrs');
+    if (raw) {
+      const data = JSON.parse(raw);
       if (data.solflare) solflareAddrInput.value = data.solflare;
       if (data.trust) trustAddrInput.value = data.trust;
     }
@@ -509,7 +531,7 @@ loadDireccionesGuardadas();
 
 async function guardarDirecciones() {
   try {
-    await window.storage.set('card4_addrs', JSON.stringify({
+    await almacen.set('card4_addrs', JSON.stringify({
       solflare: solflareAddrInput.value.trim(),
       trust: trustAddrInput.value.trim()
     }));
