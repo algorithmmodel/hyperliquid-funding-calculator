@@ -779,8 +779,11 @@ function normalizarError(err) {
   return msg || 'API no disponible';
 }
 
+// NEAR Intents mudo su interfaz web a near.com; near-intents.org quedo dado de
+// baja. La API que usa esta pagina (1click.chaindefuser.com) NO migro: sigue
+// siendo la vigente segun docs.near-intents.org (verificado el 1-ago-2026).
 const PROVIDER_URLS = {
-  'NEAR Intents': 'https://near-intents.org',
+  'NEAR Intents': 'https://near.com',
   'Bitget': 'https://www.bitget.com'
 };
 
